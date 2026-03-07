@@ -128,11 +128,8 @@ Private Sub UserForm_Initialize()
         m_txtFilter.Text = DictStr(ui, "search_text")
     End If
 
-    Application.WindowState = xlMinimized
     m_lastWidth = Me.Width: m_lastHeight = Me.Height
-    Dim pollSec As Long: pollSec = DictLng(m_config, "poll_interval", 5)
-    If pollSec < 1 Then pollSec = 5
-    Application.OnTime Now + TimeSerial(0, 0, pollSec), "FolioMain.PollCallback"
+    FolioMain.StartPolling
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1186,11 +1183,11 @@ End Sub
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "QueryClose"
     On Error GoTo ErrHandler
-    ' Stop poll timer
-    FolioMain.g_pollActive = False
-    On Error Resume Next
-    Application.OnTime Now, "FolioMain.PollCallback", , False
-    On Error GoTo ErrHandler
+    FolioMain.StopPolling
+
+    If FolioMain.g_forceClose Then
+        eh.OK: Exit Sub
+    End If
 
     Dim ui As Object: Set ui = DictObj(m_config, "ui_state")
     If ui Is Nothing Then Set ui = NewDict(): DictPut m_config, "ui_state", ui
@@ -1202,7 +1199,6 @@ Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     On Error Resume Next
     ThisWorkbook.Save
     On Error GoTo ErrHandler
-    Application.WindowState = xlNormal
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub

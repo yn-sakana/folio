@@ -560,7 +560,7 @@ Private Sub m_cmdSave_Click()
     DictPut m_config, "poll_interval", pollVal
     FolioConfig.SaveProfile m_profileName, m_config
     FolioConfig.SetActiveProfile m_profileName
-    Me.Hide
+    Unload Me
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -568,7 +568,7 @@ End Sub
 Private Sub m_cmdCancel_Click()
     Dim eh As New ErrorHandler: eh.Enter "frmSettings", "cmdCancel_Click"
     On Error GoTo ErrHandler
-    Me.Hide
+    Unload Me
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -576,8 +576,6 @@ End Sub
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     Dim eh As New ErrorHandler: eh.Enter "frmSettings", "UserForm_QueryClose"
     On Error GoTo ErrHandler
-    Me.Hide
-    Cancel = True
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub

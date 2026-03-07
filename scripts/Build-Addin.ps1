@@ -11,7 +11,8 @@
 
 param(
     [ValidateSet('xlsm', 'xlam')]
-    [string]$OutputFormat = 'xlsm'
+    [string]$OutputFormat = 'xlsm',
+    [string]$OutputName = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -111,6 +112,19 @@ try {
         $codeMod.AddFromString($code)
     }
 
+    $thisWorkbookCode = @"
+Option Explicit
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    On Error Resume Next
+    FolioMain.BeforeWorkbookClose
+End Sub
+"@
+    $docComp = $vbProj.VBComponents.Item('ThisWorkbook')
+    $docCode = $docComp.CodeModule
+    if ($docCode.CountOfLines -gt 0) { $docCode.DeleteLines(1, $docCode.CountOfLines) }
+    $docCode.AddFromString($thisWorkbookCode)
+
     # --- 4. Pre-create _folio_config with sample paths ---
     $sampleDir = Join-Path $projectDir 'sample'
     $mailDir = Join-Path $sampleDir 'mail'
@@ -143,7 +157,11 @@ try {
     Write-Host "  config: mail=$mailDir, cases=$casesDir" -ForegroundColor Green
 
     # --- Save ---
-    $outputName = "folio.$OutputFormat"
+    if ([string]::IsNullOrWhiteSpace($OutputName)) {
+        $outputName = "folio.$OutputFormat"
+    } else {
+        $outputName = $OutputName
+    }
     $outputPath = Join-Path $projectDir $outputName
     $fileFormat = if ($OutputFormat -eq 'xlam') { 55 } else { 52 }
     if (Test-Path $outputPath) { Remove-Item $outputPath -Force }
