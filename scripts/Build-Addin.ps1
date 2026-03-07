@@ -25,7 +25,8 @@ $basModules = @(
     'FolioData.bas',
     'FolioChangeLog.bas',
     'FolioMain.bas',
-    'FolioOutlook.bas'
+    'FolioOutlook.bas',
+    'FolioBundler.bas'
 )
 $clsModules = @(
     'ErrorHandler.cls',
