@@ -1,0 +1,16 @@
+{
+  "mail_id": "MAIL-0002",
+  "entry_id": "00000002",
+  "mailbox_address": "shinsa@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-04-18T14:05:00+09:00",
+  "sender_name": "佐藤 花子",
+  "sender_email": "sato@kodomo-mirai.org",
+  "subject": "交付金申請書類の送付（子ども未来サポート）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [
+    { "path": "application.pdf" },
+    { "path": "articles.pdf" }
+  ]
+}
