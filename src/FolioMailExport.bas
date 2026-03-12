@@ -4,7 +4,8 @@ Option Explicit
 ' ============================================================================
 ' Setup:
 '   1. Import this module into Outlook VBA (Alt+F11 > File > Import)
-'   2. Paste the following into ThisOutlookSession:
+'   2. Edit EXPORT_ROOT below to your export folder path.
+'   3. Paste the following into ThisOutlookSession:
 '
 '      Private Sub Application_Startup()
 '          FolioMailExport.FolioMail_OnStartup
@@ -14,63 +15,37 @@ Option Explicit
 '          FolioMailExport.FolioMail_OnNewMail EntryIDCollection
 '      End Sub
 '
-'   3. Run FolioMail_Run once (Alt+F8) to set the export folder path.
 '   4. Restart Outlook. Auto-export is now active.
 ' ============================================================================
 
 Private Const OLMSGUNICODE As Long = 9
-Private Const REG_APP As String = "FolioMailExport"
-Private Const REG_SECTION As String = "Settings"
+
+' >>> Edit this path <<<
+Private Const EXPORT_ROOT As String = "C:\mail_archive"
 
 ' ============================================================================
-' Launcher (Alt+F8)
+' Launcher (Alt+F8) - manual full scan
 ' ============================================================================
 
 Public Sub FolioMail_Run()
-    Dim exportRoot As String
-
-    ' Load saved settings
-    exportRoot = GetSetting(REG_APP, REG_SECTION, "ExportRoot", "")
-
-    ' First run: prompt for export path
-    If Len(exportRoot) = 0 Then
-        exportRoot = InputBox("Export folder path:" & vbCrLf & vbCrLf & _
-            "Mail data will be saved to this folder.", "FolioMailExport - Setup")
-        If Len(exportRoot) = 0 Then Exit Sub
-        SaveSetting REG_APP, REG_SECTION, "ExportRoot", exportRoot
-    End If
-
-    Dim stateFile As String
-    stateFile = exportRoot & "\.exported.json"
-
     Dim count As Long
-    count = FolioMail_Export(exportRoot, stateFile)
-
+    count = FolioMail_Export(EXPORT_ROOT, EXPORT_ROOT & "\.exported.json")
     MsgBox "Exported " & count & " new mail(s)." & vbCrLf & vbCrLf & _
-        "Output: " & exportRoot, vbInformation, "FolioMailExport"
+        "Output: " & EXPORT_ROOT, vbInformation, "FolioMailExport"
 End Sub
 
 ' Called from ThisOutlookSession.Application_Startup
-' Full scan to catch anything missed while Outlook was closed.
 Public Sub FolioMail_OnStartup()
-    Dim exportRoot As String
-    exportRoot = GetSetting(REG_APP, REG_SECTION, "ExportRoot", "")
-    If Len(exportRoot) = 0 Then Exit Sub
-    Debug.Print "[FolioMail] Startup scan: " & exportRoot
+    Debug.Print "[FolioMail] Startup scan: " & EXPORT_ROOT
     Dim count As Long
-    count = FolioMail_Export(exportRoot, exportRoot & "\.exported.json")
+    count = FolioMail_Export(EXPORT_ROOT, EXPORT_ROOT & "\.exported.json")
     Debug.Print "[FolioMail] Startup scan done: " & count & " new mail(s)"
 End Sub
 
 ' Called from ThisOutlookSession.Application_NewMailEx
-' Exports individual mail items by EntryID (comma-separated).
 Public Sub FolioMail_OnNewMail(ByVal entryIdList As String)
     On Error Resume Next
-    Dim exportRoot As String
-    exportRoot = GetSetting(REG_APP, REG_SECTION, "ExportRoot", "")
-    If Len(exportRoot) = 0 Then Exit Sub
-
-    Dim stateFile As String: stateFile = exportRoot & "\.exported.json"
+    Dim stateFile As String: stateFile = EXPORT_ROOT & "\.exported.json"
     Dim exported As Object: Set exported = LoadExportedIds(stateFile)
     Dim ids() As String: ids = Split(entryIdList, ",")
     Dim i As Long
@@ -88,7 +63,7 @@ Public Sub FolioMail_OnNewMail(ByVal entryIdList As String)
         Dim mail As Outlook.MailItem: Set mail = item
         Dim accountSmtp As String: accountSmtp = GetStoreSmtpAddress(mail.Parent.Store)
         Dim folderRoot As String
-        folderRoot = exportRoot & "\" & SafeName(accountSmtp) & NormalizeFolderPath(mail.Parent.FolderPath)
+        folderRoot = EXPORT_ROOT & "\" & SafeName(accountSmtp) & NormalizeFolderPath(mail.Parent.FolderPath)
         EnsureFolder folderRoot
 
         ExportMailItem mail, folderRoot, accountSmtp
@@ -98,12 +73,6 @@ NextId:
     Next i
 
     SaveExportedIds stateFile, exported
-End Sub
-
-' Reset saved settings (run to reconfigure)
-Public Sub FolioMail_Reset()
-    DeleteSetting REG_APP, REG_SECTION
-    MsgBox "Settings cleared. Run FolioMail_Run to reconfigure.", vbInformation, "FolioMailExport"
 End Sub
 
 ' ============================================================================
