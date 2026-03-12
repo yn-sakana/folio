@@ -1,6 +1,23 @@
 Attribute VB_Name = "FolioMailExport"
 Option Explicit
 
+' ============================================================================
+' Setup:
+'   1. Import this module into Outlook VBA (Alt+F11 > File > Import)
+'   2. Paste the following into ThisOutlookSession:
+'
+'      Private Sub Application_Startup()
+'          FolioMailExport.FolioMail_OnStartup
+'      End Sub
+'
+'      Private Sub Application_NewMailEx(ByVal EntryIDCollection As String)
+'          FolioMailExport.FolioMail_OnNewMail EntryIDCollection
+'      End Sub
+'
+'   3. Run FolioMail_Run once (Alt+F8) to set the export folder path.
+'   4. Restart Outlook. Auto-export is now active.
+' ============================================================================
+
 Private Const OLMSGUNICODE As Long = 9
 Private Const REG_APP As String = "FolioMailExport"
 Private Const REG_SECTION As String = "Settings"
@@ -31,6 +48,56 @@ Public Sub FolioMail_Run()
 
     MsgBox "Exported " & count & " new mail(s)." & vbCrLf & vbCrLf & _
         "Output: " & exportRoot, vbInformation, "FolioMailExport"
+End Sub
+
+' Called from ThisOutlookSession.Application_Startup
+' Full scan to catch anything missed while Outlook was closed.
+Public Sub FolioMail_OnStartup()
+    Dim exportRoot As String
+    exportRoot = GetSetting(REG_APP, REG_SECTION, "ExportRoot", "")
+    If Len(exportRoot) = 0 Then Exit Sub
+    Debug.Print "[FolioMail] Startup scan: " & exportRoot
+    Dim count As Long
+    count = FolioMail_Export(exportRoot, exportRoot & "\.exported.json")
+    Debug.Print "[FolioMail] Startup scan done: " & count & " new mail(s)"
+End Sub
+
+' Called from ThisOutlookSession.Application_NewMailEx
+' Exports individual mail items by EntryID (comma-separated).
+Public Sub FolioMail_OnNewMail(ByVal entryIdList As String)
+    On Error Resume Next
+    Dim exportRoot As String
+    exportRoot = GetSetting(REG_APP, REG_SECTION, "ExportRoot", "")
+    If Len(exportRoot) = 0 Then Exit Sub
+
+    Dim stateFile As String: stateFile = exportRoot & "\.exported.json"
+    Dim exported As Object: Set exported = LoadExportedIds(stateFile)
+    Dim ids() As String: ids = Split(entryIdList, ",")
+    Dim i As Long
+
+    For i = 0 To UBound(ids)
+        Dim entryId As String: entryId = Trim$(ids(i))
+        If Len(entryId) = 0 Then GoTo NextId
+        If exported.Exists(entryId) Then GoTo NextId
+
+        Dim item As Object
+        Set item = Application.Session.GetItemFromID(entryId)
+        If item Is Nothing Then GoTo NextId
+        If Not TypeOf item Is Outlook.MailItem Then GoTo NextId
+
+        Dim mail As Outlook.MailItem: Set mail = item
+        Dim accountSmtp As String: accountSmtp = GetStoreSmtpAddress(mail.Parent.Store)
+        Dim folderRoot As String
+        folderRoot = exportRoot & "\" & SafeName(accountSmtp) & NormalizeFolderPath(mail.Parent.FolderPath)
+        EnsureFolder folderRoot
+
+        ExportMailItem mail, folderRoot, accountSmtp
+        exported.Add entryId, ""
+        Debug.Print "[FolioMail] New: " & mail.Subject
+NextId:
+    Next i
+
+    SaveExportedIds stateFile, exported
 End Sub
 
 ' Reset saved settings (run to reconfigure)
@@ -89,6 +156,7 @@ Private Function ExportFolderTree(ByVal targetFolder As Outlook.Folder, ByVal ex
 
     folderRoot = exportRoot & "\" & SafeName(accountSmtp) & NormalizeFolderPath(targetFolder.FolderPath)
     EnsureFolder folderRoot
+    Debug.Print "[FolioMail] Scanning: " & targetFolder.FolderPath & " (" & targetFolder.Items.Count & " items)"
 
     Set items = targetFolder.Items
     On Error Resume Next
@@ -103,6 +171,7 @@ Private Function ExportFolderTree(ByVal targetFolder As Outlook.Folder, ByVal ex
                 ExportMailItem mail, folderRoot, accountSmtp
                 exported.Add mail.EntryID, ""
                 total = total + 1
+                Debug.Print "[FolioMail]   Exported: " & mail.Subject
             End If
         End If
     Next itemIndex
