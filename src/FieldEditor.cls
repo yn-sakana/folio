@@ -16,6 +16,7 @@ Private m_form As Object
 Private m_isReadOnly As Boolean
 Private m_prevValue As String
 Private m_suppressing As Boolean
+Private m_committedValue As String  ' value at last focus-enter / external set
 
 Public Sub Init(txt As MSForms.TextBox, fieldName As String, frm As Object, isReadOnly As Boolean, Optional fieldType As String = "text")
     Set m_txt = txt
@@ -50,16 +51,22 @@ End Property
 Public Sub SetValue(val As String)
     m_suppressing = True
     m_prevValue = val
+    m_committedValue = val
     m_txt.Text = FormatDisplay(val)
     m_suppressing = False
 End Sub
 
 Public Sub RefreshIfChanged(val As String)
     If val <> m_prevValue And m_txt.Text = FormatDisplay(m_prevValue) Then
+        Dim oldVal As String: oldVal = m_prevValue
         m_suppressing = True
         m_prevValue = val
+        m_committedValue = val
         m_txt.Text = FormatDisplay(val)
         m_suppressing = False
+        ' Log external change (SheetWatcher detected table edit)
+        If m_form Is Nothing Then Exit Sub
+        m_form.OnFieldChanged m_fieldName, oldVal, val, "external"
     End If
 End Sub
 
@@ -89,10 +96,22 @@ Private Sub m_txt_Change()
     If m_form Is Nothing Then Exit Sub
     Dim newVal As String: newVal = ParseRawValue()
     If newVal <> m_prevValue Then
-        Dim origin As String
-        If m_isReadOnly Then origin = "external" Else origin = "local"
-        m_form.OnFieldChanged m_fieldName, m_prevValue, newVal, origin
         m_prevValue = newVal
+        ' Write to table immediately but don't log yet (log on Exit)
+        If Not m_isReadOnly Then
+            m_form.OnFieldEdited m_fieldName, newVal
+        End If
+    End If
+End Sub
+
+Public Sub CommitEdit()
+    ' Flush pending local edit as a single log entry
+    If m_prevValue <> m_committedValue Then
+        Dim oldVal As String: oldVal = m_committedValue
+        m_committedValue = m_prevValue
+        If Not m_form Is Nothing Then
+            m_form.OnFieldChanged m_fieldName, oldVal, m_prevValue, "local"
+        End If
     End If
 End Sub
 

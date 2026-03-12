@@ -723,6 +723,7 @@ Private Sub UpdateRecordList()
     For r = 1 To rowCount
         If Len(filterText) > 0 Then
             Dim allText As String: allText = ""
+            Dim col As ListColumn
             For Each col In m_currentTable.ListColumns
                 If Not col.Name Like "_*" Then
                     Dim v As Variant: v = m_currentTable.DataBodyRange.Cells(r, col.Index).Value
@@ -755,7 +756,17 @@ End Sub
 ' Detail Update
 ' ============================================================================
 
+Private Sub CommitPendingEdits()
+    If m_fieldEditors Is Nothing Then Exit Sub
+    Dim i As Long
+    For i = 1 To m_fieldEditors.Count
+        Dim editor As FieldEditor: Set editor = m_fieldEditors(i)
+        editor.CommitEdit
+    Next i
+End Sub
+
 Private Sub UpdateDetail()
+    CommitPendingEdits
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "UpdateDetail"
     On Error GoTo ErrHandler
     If m_currentSource = "" Then Exit Sub
@@ -993,12 +1004,17 @@ End Function
 ' Save / Undo
 ' ============================================================================
 
-Public Sub OnFieldChanged(fieldName As String, oldVal As String, newVal As String, origin As String)
+Public Sub OnFieldEdited(fieldName As String, newVal As String)
+    ' Called on every keystroke — write to table only, no logging
     If m_loading Then Exit Sub
-    ' Write to table immediately on local edit
-    If origin = "local" And m_currentRecIdx > 0 Then
+    If m_currentRecIdx > 0 Then
         FolioData.WriteTableCell m_currentTable, m_currentRecIdx, fieldName, newVal
     End If
+End Sub
+
+Public Sub OnFieldChanged(fieldName As String, oldVal As String, newVal As String, origin As String)
+    ' Called once per edit session (on blur for local, on refresh for external)
+    If m_loading Then Exit Sub
     Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
     Dim keyVal As String
     Dim kv As Variant: kv = TableCellValue(m_currentRecIdx, keyCol)
@@ -1340,6 +1356,7 @@ End Sub
 
 Private Sub CleanupRefs()
     On Error Resume Next
+    CommitPendingEdits
     If Not m_watcher Is Nothing Then m_watcher.StopWatching
     Set m_watcher = Nothing
     Set m_currentTable = Nothing

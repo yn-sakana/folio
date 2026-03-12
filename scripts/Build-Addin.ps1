@@ -160,7 +160,29 @@ End Sub
     $srcSheet.Range("D1").Value2 = "mail_link_column"
     $srcSheet.Range("E1").Value2 = "folder_link_column"
     if ($Sample) {
-        $srcSheet.Range("A2").Value2 = "anken"
+        # Read column names from sample xlsx (no hardcoded Japanese)
+        $sampleWb = $excel.Workbooks.Open($sampleXlsx, 0, $true)
+        $sampleTbl = $null
+        foreach ($ws in $sampleWb.Worksheets) {
+            foreach ($lo in $ws.ListObjects) {
+                $sampleTbl = $lo; break
+            }
+            if ($sampleTbl) { break }
+        }
+        if ($sampleTbl) {
+            $srcSheet.Range("A2").Value2 = $sampleTbl.Name
+            $srcSheet.Range("B2").Value2 = $sampleTbl.ListColumns(1).Name  # key
+            $srcSheet.Range("C2").Value2 = $sampleTbl.ListColumns(2).Name  # display name
+            # Find mail column: first column containing '@' in data
+            foreach ($col in $sampleTbl.ListColumns) {
+                if ($col.DataBodyRange -and $col.DataBodyRange.Cells(1,1).Text -match '@') {
+                    $srcSheet.Range("D2").Value2 = $col.Name; break
+                }
+            }
+            $srcSheet.Range("E2").Value2 = $sampleTbl.ListColumns(1).Name  # folder = key
+        }
+        $sampleWb.Close($false)
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($sampleWb) | Out-Null
     }
 
     # _folio_fields: one row per source+field
