@@ -1,364 +1,305 @@
 Attribute VB_Name = "FolioConfig"
 Option Explicit
 
-Private Const CFG_SHEET As String = "_folio_config"
+Private Const SH_CONFIG As String = "_folio_config"
+Private Const SH_SOURCES As String = "_folio_sources"
+Private Const SH_FIELDS As String = "_folio_fields"
 
 ' ============================================================================
 ' Sheet Management
 ' ============================================================================
 
-Public Sub EnsureConfigSheet()
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "EnsureConfigSheet"
-    On Error GoTo ErrHandler
-    Dim wb As Workbook: Set wb = ThisWorkbook
+Public Sub EnsureConfigSheets()
+    EnsureSheet SH_CONFIG, Array("key", "value")
+    EnsureSheet SH_SOURCES, Array("source_name", "key_column", "display_name_column", "mail_link_column", "folder_link_column")
+    EnsureSheet SH_FIELDS, Array("source_name", "field_name", "type", "in_list", "editable", "multiline")
+End Sub
+
+Private Sub EnsureSheet(shName As String, headers As Variant)
     Dim ws As Worksheet
-    Set ws = Nothing
     On Error Resume Next
-    Set ws = wb.Worksheets(CFG_SHEET)
-    On Error GoTo ErrHandler
+    Set ws = ThisWorkbook.Worksheets(shName)
+    On Error GoTo 0
     If ws Is Nothing Then
-        Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-        ws.Name = CFG_SHEET
+        Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws.Name = shName
         ws.Visible = xlSheetVeryHidden
-        ' Row 1: header
-        ws.Range("A1").Value = "active_profile"
-        ws.Range("B1").Value = "default"
-        ' Row 3: profile table header
-        ws.Range("A3").Value = "profile_name"
-        ws.Range("B3").Value = "config_json"
-        ' Row 4: default profile
-        ws.Range("A4").Value = "default"
-        ws.Range("B4").Value = ToJson(NewDefaultConfig(), 0)
+        Dim i As Long
+        For i = 0 To UBound(headers)
+            ws.Cells(1, i + 1).Value = headers(i)
+        Next i
     End If
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
 End Sub
 
 Private Function CfgSheet() As Worksheet
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "CfgSheet"
-    On Error GoTo ErrHandler
-    EnsureConfigSheet
-    Set CfgSheet = ThisWorkbook.Worksheets(CFG_SHEET)
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+    EnsureConfigSheets
+    Set CfgSheet = ThisWorkbook.Worksheets(SH_CONFIG)
+End Function
+
+Private Function SrcSheet() As Worksheet
+    EnsureConfigSheets
+    Set SrcSheet = ThisWorkbook.Worksheets(SH_SOURCES)
+End Function
+
+Private Function FldSheet() As Worksheet
+    EnsureConfigSheets
+    Set FldSheet = ThisWorkbook.Worksheets(SH_FIELDS)
 End Function
 
 ' ============================================================================
-' Profile CRUD
+' Config (key-value)
 ' ============================================================================
 
-Public Function GetProfileNames() As Collection
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "GetProfileNames"
-    On Error GoTo ErrHandler
-    Set GetProfileNames = New Collection
-    Dim ws As Worksheet: Set ws = CfgSheet()
-    Dim r As Long: r = 4
-    Do While Len(Trim$(CStr(ws.Cells(r, 1).Value))) > 0
-        GetProfileNames.Add CStr(ws.Cells(r, 1).Value)
-        r = r + 1
-    Loop
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+Public Function GetStr(key As String, Optional def As String = "") As String
+    GetStr = def
+    Dim r As Long: r = FindRow(CfgSheet(), 1, key)
+    If r > 0 Then GetStr = CStr(CfgSheet().Cells(r, 2).Value)
+    If Len(GetStr) = 0 Then GetStr = def
 End Function
 
-Public Function GetActiveProfileName() As String
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "GetActiveProfileName"
-    On Error GoTo ErrHandler
+Public Sub SetStr(key As String, value As String)
     Dim ws As Worksheet: Set ws = CfgSheet()
-    GetActiveProfileName = CStr(ws.Range("B1").Value)
-    If Len(Trim$(GetActiveProfileName)) = 0 Then GetActiveProfileName = "default"
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
-End Function
-
-Public Sub SetActiveProfile(name As String)
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "SetActiveProfile"
-    On Error GoTo ErrHandler
-    Dim ws As Worksheet: Set ws = CfgSheet()
-    ws.Range("B1").Value = name
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-Public Function LoadProfile(name As String) As Object
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "LoadProfile"
-    On Error GoTo ErrHandler
-    Dim ws As Worksheet: Set ws = CfgSheet()
-    Dim r As Long: r = FindProfileRow(name)
-    If r = 0 Then
-        Set LoadProfile = NewDefaultConfig()
-        eh.OK: Exit Function
-    End If
-    Dim json As String: json = CStr(ws.Cells(r, 2).Value)
-    If Len(Trim$(json)) = 0 Then
-        Set LoadProfile = NewDefaultConfig()
-    Else
-        Set LoadProfile = ParseJson(json)
-    End If
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
-End Function
-
-Public Sub SaveProfile(name As String, config As Object)
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "SaveProfile"
-    On Error GoTo ErrHandler
-    Dim ws As Worksheet: Set ws = CfgSheet()
-    Dim r As Long: r = FindProfileRow(name)
+    Dim r As Long: r = FindRow(ws, 1, key)
     If r = 0 Then
         r = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
-        If r < 4 Then r = 4
-        ws.Cells(r, 1).Value = name
+        If r < 2 Then r = 2
+        ws.Cells(r, 1).Value = key
     End If
-    ws.Cells(r, 2).Value = ToJson(config, 0)
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
+    ws.Cells(r, 2).Value = value
 End Sub
 
-Public Sub DeleteProfile(name As String)
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "DeleteProfile"
-    On Error GoTo ErrHandler
-    If LCase$(name) = "default" Then eh.OK: Exit Sub
-    Dim ws As Worksheet: Set ws = CfgSheet()
-    Dim r As Long: r = FindProfileRow(name)
-    If r > 0 Then ws.Rows(r).Delete
-    If LCase$(GetActiveProfileName()) = LCase$(name) Then SetActiveProfile "default"
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
+Public Function GetLng(key As String, Optional def As Long = 0) As Long
+    GetLng = def
+    Dim s As String: s = GetStr(key)
+    If Len(s) > 0 And IsNumeric(s) Then GetLng = CLng(s)
+End Function
+
+Public Sub SetLng(key As String, value As Long)
+    SetStr key, CStr(value)
 End Sub
 
-Public Sub RenameProfile(oldName As String, newName As String)
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "RenameProfile"
-    On Error GoTo ErrHandler
-    Dim ws As Worksheet: Set ws = CfgSheet()
-    Dim r As Long: r = FindProfileRow(oldName)
-    If r > 0 Then ws.Cells(r, 1).Value = newName
-    If LCase$(GetActiveProfileName()) = LCase$(oldName) Then SetActiveProfile newName
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
+' ============================================================================
+' Sources (_folio_sources)
+' ============================================================================
 
-Private Function FindProfileRow(name As String) As Long
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "FindProfileRow"
-    On Error GoTo ErrHandler
-    Dim ws As Worksheet: Set ws = CfgSheet()
-    Dim r As Long: r = 4
+Public Function GetSourceNames() As Collection
+    Set GetSourceNames = New Collection
+    Dim ws As Worksheet: Set ws = SrcSheet()
+    Dim r As Long: r = 2
     Do While Len(Trim$(CStr(ws.Cells(r, 1).Value))) > 0
-        If LCase$(CStr(ws.Cells(r, 1).Value)) = LCase$(name) Then
-            FindProfileRow = r
-            eh.OK: Exit Function
-        End If
+        GetSourceNames.Add CStr(ws.Cells(r, 1).Value)
         r = r + 1
     Loop
-    FindProfileRow = 0
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
 End Function
 
-' ============================================================================
-' Active Config (convenience)
-' ============================================================================
-
-Public Function GetActiveConfig() As Object
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "GetActiveConfig"
-    On Error GoTo ErrHandler
-    Set GetActiveConfig = LoadProfile(GetActiveProfileName())
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+Public Function GetSourceStr(src As String, col As String, Optional def As String = "") As String
+    GetSourceStr = def
+    Dim ws As Worksheet: Set ws = SrcSheet()
+    Dim r As Long: r = FindRow(ws, 1, src)
+    If r = 0 Then Exit Function
+    Dim c As Long: c = FindCol(ws, col)
+    If c = 0 Then Exit Function
+    Dim v As String: v = CStr(ws.Cells(r, c).Value)
+    If Len(v) > 0 Then GetSourceStr = v
 End Function
 
-Public Sub SaveActiveConfig(config As Object)
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "SaveActiveConfig"
-    On Error GoTo ErrHandler
-    SaveProfile GetActiveProfileName(), config
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
+Public Sub SetSourceStr(src As String, col As String, value As String)
+    Dim ws As Worksheet: Set ws = SrcSheet()
+    Dim r As Long: r = FindRow(ws, 1, src)
+    If r = 0 Then
+        r = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+        If r < 2 Then r = 2
+        ws.Cells(r, 1).Value = src
+    End If
+    Dim c As Long: c = FindCol(ws, col)
+    If c = 0 Then Exit Sub
+    ws.Cells(r, c).Value = value
+End Sub
+
+Public Sub EnsureSource(src As String)
+    Dim ws As Worksheet: Set ws = SrcSheet()
+    If FindRow(ws, 1, src) = 0 Then
+        Dim r As Long: r = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+        If r < 2 Then r = 2
+        ws.Cells(r, 1).Value = src
+    End If
 End Sub
 
 ' ============================================================================
-' Default Config
+' Fields (_folio_fields)
 ' ============================================================================
 
-Public Function NewDefaultConfig() As Object
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "NewDefaultConfig"
-    On Error GoTo ErrHandler
-    Dim cfg As Object: Set cfg = NewDict()
-    cfg.Add "self_address", ""
-    cfg.Add "mail_folder", ""
-    cfg.Add "case_folder_root", ""
-    cfg.Add "poll_interval", 5
-    cfg.Add "sources", NewDict()
-    cfg.Add "ui_state", NewDefaultUiState()
-    Set NewDefaultConfig = cfg
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+Public Function GetFieldNames(src As String) As Collection
+    Set GetFieldNames = New Collection
+    Dim ws As Worksheet: Set ws = FldSheet()
+    Dim r As Long
+    For r = 2 To ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+        If LCase$(CStr(ws.Cells(r, 1).Value)) = LCase$(src) Then
+            GetFieldNames.Add CStr(ws.Cells(r, 2).Value)
+        End If
+    Next r
 End Function
 
-Private Function NewDefaultUiState() As Object
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "NewDefaultUiState"
-    On Error GoTo ErrHandler
-    Dim ui As Object: Set ui = NewDict()
-    ui.Add "window_width", 870
-    ui.Add "window_height", 540
-    ui.Add "left_width", 250
-    ui.Add "right_width", 250
-    ui.Add "selected_source", ""
-    ui.Add "search_text", ""
-    Set NewDefaultUiState = ui
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+Public Function GetFieldStr(src As String, fld As String, col As String, Optional def As String = "") As String
+    GetFieldStr = def
+    Dim ws As Worksheet: Set ws = FldSheet()
+    Dim r As Long: r = FindFieldRow(ws, src, fld)
+    If r = 0 Then Exit Function
+    Dim c As Long: c = FindCol(ws, col)
+    If c = 0 Then Exit Function
+    Dim v As String: v = CStr(ws.Cells(r, c).Value)
+    If Len(v) > 0 Then GetFieldStr = v
 End Function
 
-' ============================================================================
-' Source Config Helpers
-' ============================================================================
-
-Public Function GetSourceConfig(config As Object, sourceName As String) As Object
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "GetSourceConfig"
-    On Error GoTo ErrHandler
-    Dim sources As Object: Set sources = DictObj(config, "sources")
-    If sources Is Nothing Then eh.OK: Exit Function
-    Set GetSourceConfig = DictObj(sources, sourceName)
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+Public Function GetFieldBool(src As String, fld As String, col As String, Optional def As Boolean = False) As Boolean
+    GetFieldBool = def
+    Dim v As String: v = GetFieldStr(src, fld, col)
+    If Len(v) > 0 Then GetFieldBool = CBool(v)
 End Function
 
-Public Function EnsureSourceConfig(config As Object, sourceName As String) As Object
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "EnsureSourceConfig"
-    On Error GoTo ErrHandler
-    Dim sources As Object: Set sources = DictObj(config, "sources")
-    If sources Is Nothing Then
-        Set sources = NewDict()
-        DictPut config, "sources", sources
+Public Sub SetFieldStr(src As String, fld As String, col As String, value As String)
+    Dim ws As Worksheet: Set ws = FldSheet()
+    Dim r As Long: r = FindFieldRow(ws, src, fld)
+    If r = 0 Then
+        r = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+        If r < 2 Then r = 2
+        ws.Cells(r, 1).Value = src
+        ws.Cells(r, 2).Value = fld
     End If
-    Dim src As Object: Set src = DictObj(sources, sourceName)
-    If src Is Nothing Then
-        Set src = NewDict()
-        src.Add "key_column", ""
-        src.Add "display_name_column", ""
-        src.Add "mail_link_column", ""
-        src.Add "folder_link_column", ""
-        src.Add "field_settings", NewDict()
-        DictPut sources, sourceName, src
+    Dim c As Long: c = FindCol(ws, col)
+    If c = 0 Then Exit Sub
+    ws.Cells(r, c).Value = value
+End Sub
+
+Public Sub SetFieldBool(src As String, fld As String, col As String, value As Boolean)
+    SetFieldStr src, fld, col, CStr(value)
+End Sub
+
+Public Sub EnsureField(src As String, fld As String)
+    Dim ws As Worksheet: Set ws = FldSheet()
+    If FindFieldRow(ws, src, fld) = 0 Then
+        Dim r As Long: r = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+        If r < 2 Then r = 2
+        ws.Cells(r, 1).Value = src
+        ws.Cells(r, 2).Value = fld
+        ws.Cells(r, FindCol(ws, "type")).Value = "text"
+        ws.Cells(r, FindCol(ws, "in_list")).Value = False
+        ws.Cells(r, FindCol(ws, "editable")).Value = True
+        ws.Cells(r, FindCol(ws, "multiline")).Value = False
     End If
-    Set EnsureSourceConfig = src
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+End Sub
+
+' ============================================================================
+' Row/Col Lookup Helpers
+' ============================================================================
+
+Private Function FindRow(ws As Worksheet, col As Long, key As String) As Long
+    FindRow = 0
+    Dim r As Long
+    For r = 2 To ws.Cells(ws.Rows.Count, col).End(xlUp).Row
+        If LCase$(CStr(ws.Cells(r, col).Value)) = LCase$(key) Then
+            FindRow = r: Exit Function
+        End If
+    Next r
+End Function
+
+Private Function FindCol(ws As Worksheet, colName As String) As Long
+    FindCol = 0
+    Dim c As Long
+    For c = 1 To ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+        If LCase$(CStr(ws.Cells(1, c).Value)) = LCase$(colName) Then
+            FindCol = c: Exit Function
+        End If
+    Next c
+End Function
+
+Private Function FindFieldRow(ws As Worksheet, src As String, fld As String) As Long
+    FindFieldRow = 0
+    Dim r As Long
+    For r = 2 To ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+        If LCase$(CStr(ws.Cells(r, 1).Value)) = LCase$(src) And _
+           LCase$(CStr(ws.Cells(r, 2).Value)) = LCase$(fld) Then
+            FindFieldRow = r: Exit Function
+        End If
+    Next r
 End Function
 
 ' ============================================================================
 ' Field Settings Auto-Init
 ' ============================================================================
 
-Public Sub InitFieldSettingsFromTable(srcCfg As Object, tbl As ListObject)
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "InitFieldSettingsFromTable"
-    On Error GoTo ErrHandler
-    Dim fs As Object: Set fs = DictObj(srcCfg, "field_settings")
-    If fs Is Nothing Then
-        Set fs = NewDict()
-        DictPut srcCfg, "field_settings", fs
-    End If
-
+Public Sub InitFieldSettingsFromTable(src As String, tbl As ListObject)
     Dim newCount As Long: newCount = 0
+    Dim existing As Collection: Set existing = GetFieldNames(src)
+    Dim existDict As Object: Set existDict = CreateObject("Scripting.Dictionary")
+    Dim item As Variant
+    For Each item In existing
+        existDict(LCase$(CStr(item))) = True
+    Next item
+
     Dim col As ListColumn
     For Each col In tbl.ListColumns
         If col.Name Like "_*" Then GoTo NextCol
-        If Not fs.Exists(col.Name) Then
-            Dim fld As Object: Set fld = NewDict()
-            fld.Add "type", GuessFieldType(col)
-            fld.Add "in_list", False
-            fld.Add "editable", True
-            fld.Add "multiline", GuessMultiline(col)
-            DictPut fs, col.Name, fld
+        If Not existDict.Exists(LCase$(col.Name)) Then
+            EnsureField src, col.Name
+            SetFieldStr src, col.Name, "type", GuessFieldType(col)
+            SetFieldBool src, col.Name, "multiline", GuessMultiline(col)
             newCount = newCount + 1
         End If
 NextCol:
     Next col
 
-    ' Auto-detect key_column if not set: first column with unique-looking values
-    If Len(DictStr(srcCfg, "key_column")) = 0 Then
-        AutoDetectKeyColumn srcCfg, tbl
+    If Len(GetSourceStr(src, "key_column")) = 0 Then AutoDetectKeyColumn src, tbl
+    If Len(GetSourceStr(src, "display_name_column")) = 0 Then AutoDetectDisplayNameColumn src, tbl
+    If Len(GetSourceStr(src, "mail_link_column")) = 0 Then AutoDetectMailColumn src, tbl
+    If Len(GetSourceStr(src, "folder_link_column")) = 0 Then
+        Dim kc As String: kc = GetSourceStr(src, "key_column")
+        If Len(kc) > 0 Then SetSourceStr src, "folder_link_column", kc
     End If
 
-    ' Auto-detect display_name_column if not set: first text column after key_column
-    If Len(DictStr(srcCfg, "display_name_column")) = 0 Then
-        AutoDetectDisplayNameColumn srcCfg, tbl
-    End If
+    If newCount > 0 Then AutoSelectInListFields src
+End Sub
 
-    ' Auto-detect mail_link_column if not set: first column containing @
-    If Len(DictStr(srcCfg, "mail_link_column")) = 0 Then
-        AutoDetectMailColumn srcCfg, tbl
-    End If
-
-    ' Default folder_link_column to key_column if not set
-    If Len(DictStr(srcCfg, "folder_link_column")) = 0 Then
-        Dim kc As String: kc = DictStr(srcCfg, "key_column")
-        If Len(kc) > 0 Then DictPut srcCfg, "folder_link_column", kc
-    End If
-
-    ' If no in_list columns exist, default key_column + first 3 other columns
-    If newCount > 0 Then
-        Dim hasInList As Boolean: hasInList = False
-        Dim keys() As Variant: keys = fs.keys
-        Dim k As Long
-        For k = 0 To UBound(keys)
-            If DictBool(DictObj(fs, CStr(keys(k))), "in_list") Then hasInList = True: Exit For
-        Next k
-        If Not hasInList Then
-            Dim detectedKey As String: detectedKey = DictStr(srcCfg, "key_column")
-            ' Always include key_column first
-            If Len(detectedKey) > 0 And fs.Exists(detectedKey) Then
-                DictPut DictObj(fs, detectedKey), "in_list", True
-            End If
-            Dim setCount As Long: setCount = 1
-            For k = 0 To UBound(keys)
-                If setCount >= 4 Then Exit For
-                If CStr(keys(k)) = detectedKey Then GoTo NextInList
-                DictPut DictObj(fs, CStr(keys(k))), "in_list", True
-                setCount = setCount + 1
-NextInList:
-            Next k
-        End If
-    End If
-
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
+Private Sub AutoSelectInListFields(src As String)
+    Dim names As Collection: Set names = GetFieldNames(src)
+    Dim n As Variant
+    For Each n In names
+        If GetFieldBool(src, CStr(n), "in_list") Then Exit Sub
+    Next n
+    ' No in_list fields — default key + first 3
+    Dim keyCol As String: keyCol = GetSourceStr(src, "key_column")
+    If Len(keyCol) > 0 Then SetFieldBool src, keyCol, "in_list", True
+    Dim cnt As Long: cnt = 1
+    For Each n In names
+        If cnt >= 4 Then Exit For
+        If CStr(n) = keyCol Then GoTo NextAuto
+        SetFieldBool src, CStr(n), "in_list", True
+        cnt = cnt + 1
+NextAuto:
+    Next n
 End Sub
 
 Private Function GuessFieldType(col As ListColumn) As String
-    Dim eh As New ErrorHandler: eh.Enter "FolioConfig", "GuessFieldType"
-    On Error GoTo ErrHandler
     GuessFieldType = "text"
     On Error Resume Next
-    If col.DataBodyRange Is Nothing Then On Error GoTo ErrHandler: eh.OK: Exit Function
-    If col.DataBodyRange.Rows.Count = 0 Then On Error GoTo ErrHandler: eh.OK: Exit Function
-
-    ' Check actual cell value type (not string-based IsDate which misdetects e.g. "R06-001" as Reiwa date)
+    If col.DataBodyRange Is Nothing Then Exit Function
+    If col.DataBodyRange.Rows.Count = 0 Then Exit Function
     Dim r As Long
     For r = 1 To Application.Min(10, col.DataBodyRange.Rows.Count)
-        Dim cell As Range: Set cell = col.DataBodyRange.Cells(r, 1)
-        Dim v As Variant: v = cell.Value
+        Dim v As Variant: v = col.DataBodyRange.Cells(r, 1).Value
         If Not IsEmpty(v) And Not IsNull(v) Then
-            ' Check VarType: vbDate=7 means Excel stores it as a date
-            If VarType(v) = vbDate Then
-                GuessFieldType = "date": eh.OK: Exit Function
-            End If
-            ' vbDouble=5, vbLong=3, vbInteger=2, vbSingle=4, vbCurrency=6
+            If VarType(v) = vbDate Then GuessFieldType = "date": Exit Function
             If VarType(v) = vbDouble Or VarType(v) = vbLong Or VarType(v) = vbInteger Or _
-               VarType(v) = vbSingle Or VarType(v) = vbCurrency Then
-                GuessFieldType = "number": eh.OK: Exit Function
-            End If
-            ' String or other → text
-            GuessFieldType = "text": eh.OK: Exit Function
+               VarType(v) = vbSingle Or VarType(v) = vbCurrency Then GuessFieldType = "number": Exit Function
+            Exit Function
         End If
     Next r
-    On Error GoTo ErrHandler
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+    On Error GoTo 0
 End Function
 
 Private Function GuessMultiline(col As ListColumn) As Boolean
-    On Error Resume Next
     GuessMultiline = False
+    On Error Resume Next
     If col.DataBodyRange Is Nothing Then Exit Function
     Dim r As Long
     For r = 1 To Application.Min(10, col.DataBodyRange.Rows.Count)
@@ -373,42 +314,37 @@ Private Function GuessMultiline(col As ListColumn) As Boolean
     On Error GoTo 0
 End Function
 
-Private Sub AutoDetectKeyColumn(srcCfg As Object, tbl As ListObject)
+Private Sub AutoDetectKeyColumn(src As String, tbl As ListObject)
     On Error Resume Next
     If tbl.DataBodyRange Is Nothing Then Exit Sub
     Dim rowCount As Long: rowCount = tbl.DataBodyRange.Rows.Count
     If rowCount = 0 Then Exit Sub
-    ' Find first column where all sampled values are unique and non-empty
     Dim col As ListColumn
     For Each col In tbl.ListColumns
         If col.Name Like "_*" Then GoTo NextKeyCol
         Dim vals As Object: Set vals = CreateObject("Scripting.Dictionary")
         Dim allUnique As Boolean: allUnique = True
         Dim hasEmpty As Boolean: hasEmpty = False
-        Dim r As Long
-        Dim checkRows As Long: checkRows = Application.Min(50, rowCount)
+        Dim r As Long, checkRows As Long: checkRows = Application.Min(50, rowCount)
         For r = 1 To checkRows
             Dim v As Variant: v = col.DataBodyRange.Cells(r, 1).Value
-            If IsEmpty(v) Or IsNull(v) Or Len(Trim$(CStr(v))) = 0 Then
-                hasEmpty = True: Exit For
-            End If
+            If IsEmpty(v) Or IsNull(v) Or Len(Trim$(CStr(v))) = 0 Then hasEmpty = True: Exit For
             Dim sv As String: sv = CStr(v)
             If vals.Exists(sv) Then allUnique = False: Exit For
             vals.Add sv, True
         Next r
         If allUnique And Not hasEmpty And vals.Count > 0 Then
-            DictPut srcCfg, "key_column", col.Name
-            Exit Sub
+            SetSourceStr src, "key_column", col.Name: Exit Sub
         End If
 NextKeyCol:
     Next col
     On Error GoTo 0
 End Sub
 
-Private Sub AutoDetectDisplayNameColumn(srcCfg As Object, tbl As ListObject)
+Private Sub AutoDetectDisplayNameColumn(src As String, tbl As ListObject)
     On Error Resume Next
     If tbl.DataBodyRange Is Nothing Then Exit Sub
-    Dim keyColName As String: keyColName = DictStr(srcCfg, "key_column")
+    Dim keyColName As String: keyColName = GetSourceStr(src, "key_column")
     Dim pastKey As Boolean: pastKey = (Len(keyColName) = 0)
     Dim col As ListColumn
     For Each col In tbl.ListColumns
@@ -417,17 +353,15 @@ Private Sub AutoDetectDisplayNameColumn(srcCfg As Object, tbl As ListObject)
             If col.Name = keyColName Then pastKey = True
             GoTo NextDispCol
         End If
-        ' Use first text column after key
         If GuessFieldType(col) = "text" Then
-            DictPut srcCfg, "display_name_column", col.Name
-            Exit Sub
+            SetSourceStr src, "display_name_column", col.Name: Exit Sub
         End If
 NextDispCol:
     Next col
     On Error GoTo 0
 End Sub
 
-Private Sub AutoDetectMailColumn(srcCfg As Object, tbl As ListObject)
+Private Sub AutoDetectMailColumn(src As String, tbl As ListObject)
     On Error Resume Next
     If tbl.DataBodyRange Is Nothing Then Exit Sub
     Dim col As ListColumn
@@ -438,8 +372,7 @@ Private Sub AutoDetectMailColumn(srcCfg As Object, tbl As ListObject)
             Dim v As Variant: v = col.DataBodyRange.Cells(r, 1).Value
             If Not IsEmpty(v) And Not IsNull(v) Then
                 If InStr(CStr(v), "@") > 0 Then
-                    DictPut srcCfg, "mail_link_column", col.Name
-                    Exit Sub
+                    SetSourceStr src, "mail_link_column", col.Name: Exit Sub
                 End If
                 GoTo NextMailCol
             End If

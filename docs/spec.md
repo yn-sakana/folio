@@ -13,6 +13,7 @@ folio は Excel VBA アドインとして動作する案件管理ツール。
 - **リアルタイム双方向同期**。フォーム編集→即テーブル書き込み、テーブル変更→ポーリングでフォーム反映
 - **全変更をログに記録**。ローカル編集・外部変更・メール/フォルダ変化すべてを Change Log に流す
 - **設定は Excel 内部に保存**。`_folio_config` / `_folio_log` 隠しシートを使う
+- **WinAPI 禁止**。本番環境のポリシーで `Declare PtrSafe Function` がブロックされるため使用しない
 
 ## 3. 技術スタック
 
@@ -22,10 +23,11 @@ folio は Excel VBA アドインとして動作する案件管理ツール。
 | GUI | MSForms UserForm（ランタイム生成コントロール） |
 | データ読み書き | ListObject API（直接セルアクセス） |
 | メール連携 | Outlook COM (下書き作成のみ) |
+| メールエクスポート | ShinsaOutlookExport.bas (Outlook VBA 側、folio 本体には組み込まない) |
 | 案件フォルダ | FileSystemObject |
 | 設定保存 | 隠しシート + JSON シリアライズ |
 | ポーリング | Application.OnTime |
-| リサイズ | Win32 API (SetWindowLong) |
+| ウィンドウサイズ | S/M/L プリセット切替 |
 
 ## 4. アーキテクチャ
 
@@ -38,7 +40,7 @@ Excel ワークブック (*.xlsx)
 folio アドイン (*.xlsm)
   ├── frmFolio (メインフォーム)
   │     ├── 左: ソース選択 + フィルタ + レコード一覧
-  │     ├── 中: タブ (基本 / メール / ファイル / 通知)
+  │     ├── 中: タブ (基本 / メール / ファイル)
   │     └── 右: Change Log
   ├── FieldEditor (WithEvents で変更検知)
   ├── FolioConfig (プロファイル管理)
@@ -47,7 +49,12 @@ folio アドイン (*.xlsm)
   ├── FolioMain (エントリポイント + ポーリング)
   ├── FolioHelpers (JSON・Dict・ファイル操作)
   ├── FolioOutlook (Outlook 下書き作成)
+  ├── FolioBundler (単一 .bas エクスポート)
   └── _folio_config / _folio_log (隠しシート)
+
+メールアーカイブ (ファイルシステム)
+  └── ShinsaOutlookExport.bas (Outlook VBA) で生成
+        → folio の mail_folder 設定で参照
 ```
 
 ## 5. モジュール構成
@@ -59,6 +66,11 @@ folio アドイン (*.xlsm)
 - `Folio_ShowPanel()` — メインフォームを表示（Alt+F8 から実行）
 - `Folio_ShowSettings()` — 設定フォームを表示
 - `PollCallback()` — Application.OnTime で定期実行。frmFolio.DoPollCycle を呼ぶ
+
+**ポーリング安全機構:**
+- `g_pollActive` — ポーリング有効フラグ
+- `g_formLoaded` — フォームがロードされているかのフラグ。`frmFolio.Visible` を参照すると VB_PredeclaredId=True のフォームが自動再生成されるため、直接参照を避ける
+- `g_forceClose` — ワークブック閉じ時にフォームの UI 状態保存をスキップするフラグ
 
 ### 5.2 frmFolio.frm
 
@@ -73,12 +85,16 @@ folio アドイン (*.xlsm)
 │ フィルタ │  基本: 編集欄   │ Log      │
 │ レコード │  メール: 一覧   │          │
 │ リスト   │  ファイル: ツリー│          │
-│          │  通知: 設定     │          │
 ├──────────┼─────────────────┤          │
-│ 件数     │ Sync | Settings │          │
+│ 件数     │ Sync|Settings|SM│          │
 └──────────┴─────────────────┴──────────┘
   ステータスバー
 ```
+
+**ウィンドウサイズ:**
+- S (700x420) / M (870x540) / L (1100x680) のプリセット
+- ボタンクリックで S→M→L→S と循環
+- 初期サイズは ui_state から復元（デフォルト M）
 
 **主要メソッド:**
 
@@ -96,6 +112,11 @@ folio アドイン (*.xlsm)
 
 **データワークブック検出:**
 - ThisWorkbook 以外で ListObject を持つワークブックを自動検出
+
+**クローズ時のクリーンアップ:**
+- `UserForm_QueryClose` で全オブジェクト参照を解放 (`CleanupRefs`)
+- 特に `m_currentTable` (外部ワークブックの ListObject への参照) を Nothing にすることが必須
+- 参照を保持したまま xlsm を閉じると、別ワークブックが開いている場合に COM デッドロック→フリーズ
 
 ### 5.3 FieldEditor.cls
 
@@ -184,6 +205,7 @@ TextBox.Change
 **メールアーカイブ:**
 - `ReadMailArchive(folderPath)` — フォルダを再帰スキャンし、meta.json を持つフォルダをメールレコードとして収集
 - 添付ファイルパスを絶対パスに解決
+- meta.json は ShinsaOutlookExport.bas が生成する形式と互換
 
 **案件フォルダ:**
 - `ReadCaseFolders(rootPath)` — ルート直下のサブフォルダを案件として再帰スキャン
@@ -233,7 +255,26 @@ TextBox.Change
 
 Outlook COM 経由で返信下書きを作成。送信はしない。
 
-### 5.9 ErrorHandler.cls
+### 5.9 FolioBundler.bas
+
+全モジュールのコードを単一の `.bas` インストーラーファイルにエクスポートする。
+配布先の Excel で `Install_Folio` マクロを実行すると、モジュール・隠しシートが自動作成される。
+
+### 5.10 FolioSampleBuilder.bas
+
+サンプルデータ（テーブル・メール・フォルダ）をゼロから生成する。
+`Alt+F8` → `Folio_BuildSample` で実行。
+
+### 5.11 ShinsaOutlookExport.bas
+
+Outlook VBA にインポートして使うメールエクスポートモジュール。**folio 本体には組み込まない。**
+
+- `Shinsa_ExportMail(exportRoot, stateFilePath, selfAddress)` — 指定アカウントの全フォルダを再帰走査
+- メールごとに `meta.json` + `body.txt` + `mail.msg` + 添付ファイルを保存
+- エクスポート済み EntryID を状態ファイルで管理（差分エクスポート）
+- 出力形式は `FolioData.ReadMailArchive` と互換
+
+### 5.12 ErrorHandler.cls
 
 全モジュール共通のエラーハンドラ。Immediate ウィンドウにトレースを出力。
 
@@ -245,7 +286,7 @@ eh.OK: Exit Sub
 ErrHandler: eh.Catch
 ```
 
-### 5.10 frmSettings.frm
+### 5.13 frmSettings.frm
 
 設定フォーム（モーダル）。
 
@@ -292,13 +333,30 @@ DoPollCycle()
     → タブ表示を更新
 ```
 
+### 6.4 メールエクスポート（Outlook → ファイルシステム）
+
+```text
+Outlook VBA: Shinsa_ExportMail(exportRoot, stateFile, selfAddress)
+  → 全フォルダを再帰走査
+  → 未エクスポートのメールを保存:
+      mail_folder/account/folder_path/yyyymmdd_sender_subject/
+        ├── meta.json
+        ├── body.txt
+        ├── mail.msg
+        └── attachments...
+  → stateFile に EntryID を記録（次回は差分のみ）
+
+folio: ReadMailArchive(mail_folder)
+  → meta.json を再帰スキャン → レコードとマッチング
+```
+
 ## 7. GUI 仕様
 
 ### 7.1 レイアウト
 
-- 3カラム構成（左/中央/右）、リサイズ可能
-- デフォルトサイズ: 870 x 540
-- Win32 API で WS_THICKFRAME を付与しリサイズ対応
+- 3カラム構成（左/中央/右）
+- S/M/L プリセットで切替（ボタンクリックで循環）
+- デフォルトサイズ: M (870 x 540)
 - ポーリングでサイズ変更を検知し RepositionControls を呼ぶ
 
 ### 7.2 左カラム
@@ -314,19 +372,19 @@ DoPollCycle()
 - editable=false のフィールドは読み取り専用
 - multiline=true のフィールドは高さを広げる
 - フィールドはテーブルのカラム順で表示
+- フィールド名のプレフィクス（`グループ名_` 形式）でタブを自動分割
 
 **メールタブ:**
 - 選択レコードに紐づくメール一覧
+- メール本文プレビュー（subject, from, date, body）
 - 添付ファイル一覧（ダブルクリックで開く）
+- .msg ダブルクリックで Outlook で開く
 
 **ファイルタブ:**
 - 選択レコードに紐づく案件フォルダのファイルツリー
 - ツリー表示（インデントで階層表現）
 - ダブルクリックでファイル/フォルダを開く
 - フォルダ作成ボタン
-
-**通知タブ:**
-- （将来拡張用）
 
 ### 7.4 右カラム — Change Log
 
@@ -349,14 +407,19 @@ DoPollCycle()
 
 - デフォルト間隔: 5秒（設定で変更可能、最小1秒）
 - `Application.OnTime` で実装（VBA で唯一の非同期的メカニズム）
-- フォーム表示中のみ動作（`g_pollActive` フラグで制御）
+- `g_pollActive` + `g_formLoaded` フラグで制御
 - フォーム閉じ時に `Application.OnTime ..., False` でキャンセル
+- ワークブック閉じ時は `BeforeWorkbookClose` → `StopPolling` + `Me.Saved = True`
 
 **ポーリング内容:**
 1. フォームリサイズ検知
 2. 現在レコードの全フィールドをテーブルと照合
 3. メールアーカイブ再スキャン
 4. 案件フォルダ再スキャン
+
+**注意事項:**
+- `frmFolio.Visible` を直接参照しない。`VB_PredeclaredId=True` のフォームはアンロード後にプロパティ参照するだけで自動再生成される
+- ワークブック閉じ時に別ワークブックが開いていると Excel が終了せず、残留タイマーがアンロード済みモジュールを呼んでクラッシュする。`Me.Saved = True` で保存ダイアログを抑止し即座に閉じる
 
 ## 9. ビルド
 
@@ -372,9 +435,12 @@ VBA ソースファイルから `folio.xlsm` を生成する。
 2. .bas モジュールをインポート
 3. UserForm を作成しコードを注入
 4. .cls モジュールを作成しコードを注入
-5. `_folio_config` / `_folio_log` 隠しシートを作成
-6. サンプルパスで初期設定を書き込み
-7. .xlsm で保存
+5. ThisWorkbook に `Workbook_BeforeClose` を注入（`BeforeWorkbookClose` 呼び出し + `Me.Saved = True`）
+6. `_folio_config` / `_folio_log` 隠しシートを作成
+7. サンプルパスで初期設定を書き込み
+8. .xlsm で保存
+
+**注意:** ShinsaOutlookExport.bas はビルド対象外（Outlook VBA 用）
 
 ### 9.2 Build-Sample.ps1
 
@@ -394,7 +460,7 @@ VBA ソースファイルから `folio.xlsm` を生成する。
 ```bat
 build-addin.bat    :: folio.xlsm を生成
 build-sample.bat   :: folio-sample.xlsx + サンプルデータを生成
-run.bat            :: sample を開いてから addin を開く
+run.bat            :: ビルド → xlsm + サンプルを開く
 ```
 
 ## 10. ディレクトリ構成
@@ -402,7 +468,7 @@ run.bat            :: sample を開いてから addin を開く
 ```text
 folio/
 ├── docs/
-│   └── spec.md              ← この文書
+│   └── spec.md                  ← この文書
 ├── src/
 │   ├── FolioMain.bas
 │   ├── FolioConfig.bas
@@ -410,41 +476,47 @@ folio/
 │   ├── FolioHelpers.bas
 │   ├── FolioChangeLog.bas
 │   ├── FolioOutlook.bas
+│   ├── FolioBundler.bas
+│   ├── FolioSampleBuilder.bas
 │   ├── ErrorHandler.cls
 │   ├── FieldEditor.cls
 │   ├── frmFolio.frm
-│   └── frmSettings.frm
+│   ├── frmSettings.frm
+│   └── ShinsaOutlookExport.bas  ← Outlook VBA 用（ビルド対象外）
 ├── scripts/
 │   ├── Build-Addin.ps1
 │   ├── Build-Sample.ps1
 │   └── Test-Compile.ps1
-├── sample/                   ← ビルド生成物（git 管理）
+├── sample/                      ← サンプルデータ（git 管理）
 │   ├── folio-sample.xlsx
 │   ├── mail/
 │   └── cases/
 ├── build-addin.bat
 ├── build-sample.bat
 ├── run.bat
-└── .gitignore                ← *.xlsm, *.xlam, ~$* を除外
+├── .gitattributes               ← VBA ファイルの CRLF 強制
+└── .gitignore                   ← *.xlsm, *.xlam, ~$* を除外
 ```
 
 ## 11. 設計上の制約と決定
 
 | 項目 | 決定 | 理由 |
 |------|------|------|
+| WinAPI 禁止 | S/M/L プリセット切替 | 本番環境のポリシーで Declare PtrSafe Function がブロックされファイル保存すらできない |
 | ControlSource 不使用 | コードベースで読み書き | ControlSource は異なるワークブック間で動作しない |
 | スナップショット不使用 | テーブルを直接読み書き | 中間キャッシュは複雑性を増すだけ |
 | VBA 単一スレッド | Application.OnTime でポーリング | VBA に非同期メカニズムがない |
 | JSON 自前実装 | FolioHelpers 内 | VBA に標準 JSON ライブラリがない |
 | フィールド名ヒューリスティクス禁止 | VarType/NumberFormat で型判定 | `IsDate("R06-001")` が日本語ロケールで True を返す問題 |
 | 3-way merge 不使用 | 最後の書き込みが勝つ | Excel テーブル直接アクセスのため競合は OneDrive 側で管理 |
+| frmFolio.Visible 直接参照禁止 | g_formLoaded フラグで管理 | VB_PredeclaredId=True のフォームはプロパティ参照で自動再生成される |
+| フォーム閉じ時に全参照解放 | CleanupRefs で Nothing 代入 | 外部ワークブックの ListObject 参照が残ると COM デッドロック→フリーズ |
+| Outlook エクスポートは分離 | ShinsaOutlookExport.bas を Outlook VBA にインポート | Outlook COM の型参照が Excel VBA 側で不要、セキュリティ分離 |
 
 ## 12. 今後の課題
 
-- [ ] フィルタの絞り込み動作の検証
-- [ ] フォルダツリーの階層表示の検証
-- [ ] メール添付ファイル表示の検証
-- [ ] Excel 閉じ時のフリーズ対策の検証（OnTime キャンセル）
 - [ ] .xlam 形式での配布対応
-- [ ] 通知タブの実装
 - [ ] キーボードショートカットの充実
+- [ ] フィールドバリデーション（型に応じた入力制約）
+- [ ] レコード一覧のソート機能
+- [ ] 複数テーブル横断検索

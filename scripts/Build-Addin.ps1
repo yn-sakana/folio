@@ -118,6 +118,7 @@ Option Explicit
 Private Sub Workbook_BeforeClose(Cancel As Boolean)
     On Error Resume Next
     FolioMain.BeforeWorkbookClose
+    Me.Saved = True
 End Sub
 "@
     $docComp = $vbProj.VBComponents.Item('ThisWorkbook')
@@ -125,24 +126,46 @@ End Sub
     if ($docCode.CountOfLines -gt 0) { $docCode.DeleteLines(1, $docCode.CountOfLines) }
     $docCode.AddFromString($thisWorkbookCode)
 
-    # --- 4. Pre-create _folio_config with sample paths ---
+    # --- 4. Pre-create config sheets ---
     $sampleDir = Join-Path $projectDir 'sample'
     $mailDir = Join-Path $sampleDir 'mail'
     $casesDir = Join-Path $sampleDir 'cases'
 
-    $cfgJson = '{"self_address":"","mail_folder":"' + ($mailDir -replace '\\', '\\') + '","case_folder_root":"' + ($casesDir -replace '\\', '\\') + '","sources":{},"ui_state":{"window_width":870,"window_height":540,"left_width":250,"right_width":250,"selected_source":"","search_text":""}}'
-
+    # _folio_config: key-value pairs
     $cfgSheet = $wb.Worksheets.Add([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))
     $cfgSheet.Name = "_folio_config"
     $cfgSheet.Visible = 2  # xlSheetVeryHidden
-    $cfgSheet.Range("A1").Value2 = "active_profile"
-    $cfgSheet.Range("B1").Value2 = "default"
-    $cfgSheet.Range("A3").Value2 = "profile_name"
-    $cfgSheet.Range("B3").Value2 = "config_json"
-    $cfgSheet.Range("A4").Value2 = "default"
-    $cfgSheet.Range("B4").Value2 = $cfgJson
+    $cfgSheet.Range("A1").Value2 = "key"
+    $cfgSheet.Range("B1").Value2 = "value"
+    $cfgSheet.Range("A2").Value2 = "mail_folder"
+    $cfgSheet.Range("B2").Value2 = $mailDir
+    $cfgSheet.Range("A3").Value2 = "case_folder_root"
+    $cfgSheet.Range("B3").Value2 = $casesDir
+    $cfgSheet.Range("A4").Value2 = "poll_interval"
+    $cfgSheet.Range("B4").Value2 = "5"
 
-    # Pre-create _folio_log sheet
+    # _folio_sources: one row per source
+    $srcSheet = $wb.Worksheets.Add([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))
+    $srcSheet.Name = "_folio_sources"
+    $srcSheet.Visible = 2  # xlSheetVeryHidden
+    $srcSheet.Range("A1").Value2 = "source_name"
+    $srcSheet.Range("B1").Value2 = "key_column"
+    $srcSheet.Range("C1").Value2 = "display_name_column"
+    $srcSheet.Range("D1").Value2 = "mail_link_column"
+    $srcSheet.Range("E1").Value2 = "folder_link_column"
+
+    # _folio_fields: one row per source+field
+    $fldSheet = $wb.Worksheets.Add([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))
+    $fldSheet.Name = "_folio_fields"
+    $fldSheet.Visible = 2  # xlSheetVeryHidden
+    $fldSheet.Range("A1").Value2 = "source_name"
+    $fldSheet.Range("B1").Value2 = "field_name"
+    $fldSheet.Range("C1").Value2 = "type"
+    $fldSheet.Range("D1").Value2 = "in_list"
+    $fldSheet.Range("E1").Value2 = "editable"
+    $fldSheet.Range("F1").Value2 = "multiline"
+
+    # _folio_log
     $logSheet = $wb.Worksheets.Add([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))
     $logSheet.Name = "_folio_log"
     $logSheet.Visible = 2  # xlSheetVeryHidden

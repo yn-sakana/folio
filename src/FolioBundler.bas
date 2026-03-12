@@ -111,15 +111,6 @@ NextComp:
     lines.Add "End Function"
     lines.Add ""
 
-    ' --- Config sheet JSON ---
-    lines.Add "Private Function GetDefaultConfigJson() As String"
-    Dim cfgJson As String
-    cfgJson = GetConfigSheetJson()
-    cfgJson = Replace(cfgJson, """", """""")
-    lines.Add "    GetDefaultConfigJson = """ & cfgJson & """"
-    lines.Add "End Function"
-    lines.Add ""
-
     ' --- Install sub ---
     lines.Add "Public Sub Install_Folio()"
     lines.Add "    On Error GoTo ErrHandler"
@@ -154,8 +145,10 @@ NextComp:
     lines.Add "    Next i"
     lines.Add ""
     lines.Add "    ' Create hidden sheets"
-    lines.Add "    EnsureSheet ""_folio_config"", GetDefaultConfigJson()"
-    lines.Add "    EnsureSheet ""_folio_log"", """""
+    lines.Add "    EnsureConfigSheet ""_folio_config"", Array(""key"", ""value"")"
+    lines.Add "    EnsureConfigSheet ""_folio_sources"", Array(""source_name"", ""key_column"", ""display_name_column"", ""mail_link_column"", ""folder_link_column"")"
+    lines.Add "    EnsureConfigSheet ""_folio_fields"", Array(""source_name"", ""field_name"", ""type"", ""in_list"", ""editable"", ""multiline"")"
+    lines.Add "    EnsureConfigSheet ""_folio_log"", Array(""timestamp"", ""source"", ""key"", ""field"", ""old_value"", ""new_value"", ""origin"")"
     lines.Add ""
     lines.Add "    ' Clean up installer module"
     lines.Add "    On Error Resume Next"
@@ -187,8 +180,8 @@ NextComp:
     lines.Add "End Sub"
     lines.Add ""
 
-    ' --- EnsureSheet helper ---
-    lines.Add "Private Sub EnsureSheet(sheetName As String, configJson As String)"
+    ' --- EnsureConfigSheet helper ---
+    lines.Add "Private Sub EnsureConfigSheet(sheetName As String, headers As Variant)"
     lines.Add "    On Error Resume Next"
     lines.Add "    Dim ws As Object: Set ws = ThisWorkbook.Worksheets(sheetName)"
     lines.Add "    On Error GoTo 0"
@@ -196,22 +189,10 @@ NextComp:
     lines.Add "    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))"
     lines.Add "    ws.Name = sheetName"
     lines.Add "    ws.Visible = 2  ' xlSheetVeryHidden"
-    lines.Add "    If sheetName = ""_folio_config"" Then"
-    lines.Add "        ws.Range(""A1"").Value = ""active_profile"""
-    lines.Add "        ws.Range(""B1"").Value = ""default"""
-    lines.Add "        ws.Range(""A3"").Value = ""profile_name"""
-    lines.Add "        ws.Range(""B3"").Value = ""config_json"""
-    lines.Add "        ws.Range(""A4"").Value = ""default"""
-    lines.Add "        If Len(configJson) > 0 Then ws.Range(""B4"").Value = configJson"
-    lines.Add "    ElseIf sheetName = ""_folio_log"" Then"
-    lines.Add "        ws.Range(""A1"").Value = ""timestamp"""
-    lines.Add "        ws.Range(""B1"").Value = ""source"""
-    lines.Add "        ws.Range(""C1"").Value = ""key"""
-    lines.Add "        ws.Range(""D1"").Value = ""field"""
-    lines.Add "        ws.Range(""E1"").Value = ""old_value"""
-    lines.Add "        ws.Range(""F1"").Value = ""new_value"""
-    lines.Add "        ws.Range(""G1"").Value = ""origin"""
-    lines.Add "    End If"
+    lines.Add "    Dim i As Long"
+    lines.Add "    For i = 0 To UBound(headers)"
+    lines.Add "        ws.Cells(1, i + 1).Value = headers(i)"
+    lines.Add "    Next i"
     lines.Add "End Sub"
 
     ' --- Join all lines ---
@@ -225,18 +206,3 @@ NextComp:
 ErrHandler: eh.Catch
 End Function
 
-' ----------------------------------------------------------------------------
-' Read current config JSON from _folio_config sheet
-' ----------------------------------------------------------------------------
-Private Function GetConfigSheetJson() As String
-    On Error Resume Next
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets("_folio_config")
-    If ws Is Nothing Then
-        GetConfigSheetJson = "{}"
-        Exit Function
-    End If
-    Dim json As String: json = CStr(ws.Range("B4").Value)
-    If Len(Trim$(json)) = 0 Then json = "{}"
-    GetConfigSheetJson = json
-    On Error GoTo 0
-End Function

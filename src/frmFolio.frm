@@ -15,25 +15,6 @@ Attribute VB_Exposed = False
 Option Explicit
 
 ' ============================================================================
-' Win API for resizable form
-' ============================================================================
-#If VBA7 Then
-    Private Declare PtrSafe Function FindWindowA Lib "user32" (ByVal cls As String, ByVal cap As String) As LongPtr
-    Private Declare PtrSafe Function GetWindowLong Lib "user32" Alias "GetWindowLongA" (ByVal hWnd As LongPtr, ByVal idx As Long) As Long
-    Private Declare PtrSafe Function SetWindowLong Lib "user32" Alias "SetWindowLongA" (ByVal hWnd As LongPtr, ByVal idx As Long, ByVal val As Long) As Long
-    Private Declare PtrSafe Function DrawMenuBar Lib "user32" (ByVal hWnd As LongPtr) As Long
-#Else
-    Private Declare Function FindWindowA Lib "user32" (ByVal cls As String, ByVal cap As String) As Long
-    Private Declare Function GetWindowLong Lib "user32" Alias "GetWindowLongA" (ByVal hWnd As Long, ByVal idx As Long) As Long
-    Private Declare Function SetWindowLong Lib "user32" Alias "SetWindowLongA" (ByVal hWnd As Long, ByVal idx As Long, ByVal val As Long) As Long
-    Private Declare Function DrawMenuBar Lib "user32" (ByVal hWnd As Long) As Long
-#End If
-
-Private Const GWL_STYLE As Long = -16
-Private Const WS_THICKFRAME As Long = &H40000
-Private Const WS_MAXIMIZEBOX As Long = &H10000
-
-' ============================================================================
 ' Controls (WithEvents for event handling)
 ' ============================================================================
 Private WithEvents m_cmbSource As MSForms.ComboBox
@@ -43,6 +24,10 @@ Private WithEvents m_mpgTabs As MSForms.MultiPage
 Private WithEvents m_cmdSync As MSForms.CommandButton
 Private WithEvents m_cmdSettings As MSForms.CommandButton
 Private WithEvents m_cmdCreateFolder As MSForms.CommandButton
+Private WithEvents m_sbarLeft As MSForms.ScrollBar
+Private WithEvents m_sbarWidth As MSForms.ScrollBar
+Private WithEvents m_sbarHeight As MSForms.ScrollBar
+Private WithEvents m_sbarRight As MSForms.ScrollBar
 Private WithEvents m_cmdLogClear As MSForms.CommandButton
 Private WithEvents m_lstMail As MSForms.ListBox
 Private WithEvents m_lstAttach As MSForms.ListBox
@@ -60,7 +45,6 @@ Private m_txtMailBody As MSForms.TextBox
 ' ============================================================================
 ' State
 ' ============================================================================
-Private m_config As Object
 Private m_currentSource As String
 Private m_currentTable As ListObject
 Private m_filteredRows As Collection
@@ -79,9 +63,15 @@ Private m_mailPageIdx As Long
 Private m_filesPageIdx As Long
 
 Private Const M As Long = 6
-Private Const LEFT_W As Long = 250
-Private Const RIGHT_W As Long = 250
 Private Const UNDO_MAX As Long = 50
+Private m_leftW As Single
+Private m_rightW As Single
+
+' Window size range
+Private Const SIZE_MIN_W As Long = 730
+Private Const SIZE_MAX_W As Long = 1400
+Private Const SIZE_MIN_H As Long = 400
+Private Const SIZE_MAX_H As Long = 900
 
 ' ============================================================================
 ' Initialize
@@ -90,7 +80,6 @@ Private Const UNDO_MAX As Long = 50
 Private Sub UserForm_Initialize()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "Initialize"
     On Error GoTo ErrHandler
-    Set m_config = FolioConfig.GetActiveConfig()
     Set m_filteredRows = New Collection
     Set m_fieldEditors = New Collection
     Set m_allMailRecords = New Collection
@@ -100,33 +89,27 @@ Private Sub UserForm_Initialize()
     Set m_undoStack = New Collection
     m_currentRecIdx = -1
 
-    m_loading = False
+    m_leftW = FolioConfig.GetLng("left_width", 250)
+    m_rightW = FolioConfig.GetLng("right_width", 250)
+    Me.Width = FolioConfig.GetLng("window_width", 870)
+    Me.Height = FolioConfig.GetLng("window_height", 540)
 
-    Dim ui As Object: Set ui = DictObj(m_config, "ui_state")
-    If Not ui Is Nothing Then
-        Me.Width = DictLng(ui, "window_width", 870)
-        Me.Height = DictLng(ui, "window_height", 540)
-    Else
-        Me.Width = 870: Me.Height = 540
-    End If
-
+    m_loading = True
     eh.Trace "BuildLayout"
     BuildLayout
-    eh.Trace "MakeResizable"
-    MakeResizable
+    m_loading = False
+
     eh.Trace "LoadSources"
     LoadSources
 
-    If Not ui Is Nothing Then
-        Dim selSrc As String: selSrc = DictStr(ui, "selected_source")
-        If Len(selSrc) > 0 Then
-            Dim si As Long
-            For si = 0 To m_cmbSource.ListCount - 1
-                If m_cmbSource.List(si) = selSrc Then m_cmbSource.ListIndex = si: Exit For
-            Next si
-        End If
-        m_txtFilter.Text = DictStr(ui, "search_text")
+    Dim selSrc As String: selSrc = FolioConfig.GetStr("selected_source")
+    If Len(selSrc) > 0 Then
+        Dim si As Long
+        For si = 0 To m_cmbSource.ListCount - 1
+            If m_cmbSource.List(si) = selSrc Then m_cmbSource.ListIndex = si: Exit For
+        Next si
     End If
+    m_txtFilter.Text = FolioConfig.GetStr("search_text")
 
     m_lastWidth = Me.Width: m_lastHeight = Me.Height
     FolioMain.StartPolling
@@ -141,36 +124,73 @@ End Sub
 Private Sub BuildLayout()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "BuildLayout"
     On Error GoTo ErrHandler
-    Me.Caption = "folio - " & FolioConfig.GetActiveProfileName()
+    Me.Caption = "folio"
 
     Dim cw As Single: cw = Me.InsideWidth
     Dim ch As Single: ch = Me.InsideHeight
-    Dim centerW As Single: centerW = cw - LEFT_W - RIGHT_W - M * 4
+    Dim centerW As Single: centerW = cw - m_leftW - m_rightW - M * 4
 
-    Set m_cmbSource = AddCombo(Me, "cmbSource", M, M, LEFT_W, 18)
+    Set m_cmbSource = AddCombo(Me, "cmbSource", M, M, m_leftW, 18)
     m_cmbSource.Style = fmStyleDropDownList
-    Set m_txtFilter = AddTextBox(Me, "txtFilter", M, M + 22, LEFT_W, 18)
-    Set m_lstRecords = AddListBox(Me, "lstRecords", M, M + 44, LEFT_W, ch - 84)
+    Set m_txtFilter = AddTextBox(Me, "txtFilter", M, M + 22, m_leftW, 18)
+    Set m_lstRecords = AddListBox(Me, "lstRecords", M, M + 44, m_leftW, ch - 84)
     m_lstRecords.Font.Name = "Consolas": m_lstRecords.Font.Size = 10
-    Set m_lblCount = AddLabel(Me, "lblCount", M, ch - 36, LEFT_W, 14)
+    Set m_lblCount = AddLabel(Me, "lblCount", M, ch - 36, m_leftW, 14)
     m_lblCount.TextAlign = fmTextAlignRight
     m_lblCount.ForeColor = RGB(105, 105, 105)
 
-    Dim cx As Single: cx = LEFT_W + M * 2
+    Dim cx As Single: cx = m_leftW + M * 2
     Set m_cmdSync = AddButton(Me, "cmdSync", cx, M, 50, 22, "Sync")
     Set m_cmdSettings = AddButton(Me, "cmdSettings", cx + 54, M, 60, 22, "Settings")
     Set m_cmdCreateFolder = AddButton(Me, "cmdNewFolder", cx + 118, M, 80, 22, "New Folder")
+
+    ' 4 sliders: Left col | Width | Height | Right col
+    Dim slW As Single: slW = 47
+    Dim slGap As Single: slGap = 4
+    Set m_sbarLeft = Me.Controls.Add("Forms.ScrollBar.1", "sbarLeft")
+    With m_sbarLeft
+        .Left = cx: .Top = M + 26: .Width = slW: .Height = 14
+        .Orientation = fmOrientationHorizontal
+        .Min = 100: .Max = 400
+        .SmallChange = 10: .LargeChange = 50
+        .Value = CLng(m_leftW)
+    End With
+    Set m_sbarWidth = Me.Controls.Add("Forms.ScrollBar.1", "sbarWidth")
+    With m_sbarWidth
+        .Left = cx + (slW + slGap): .Top = M + 26: .Width = slW: .Height = 14
+        .Orientation = fmOrientationHorizontal
+        .Min = SIZE_MIN_W: .Max = SIZE_MAX_W
+        .SmallChange = 20: .LargeChange = 100
+        .Value = CLng(Me.Width)
+    End With
+    Set m_sbarHeight = Me.Controls.Add("Forms.ScrollBar.1", "sbarHeight")
+    With m_sbarHeight
+        .Left = cx + (slW + slGap) * 2: .Top = M + 26: .Width = slW: .Height = 14
+        .Orientation = fmOrientationHorizontal
+        .Min = SIZE_MIN_H: .Max = SIZE_MAX_H
+        .SmallChange = 20: .LargeChange = 100
+        .Value = CLng(Me.Height)
+    End With
+    Set m_sbarRight = Me.Controls.Add("Forms.ScrollBar.1", "sbarRight")
+    With m_sbarRight
+        .Left = cx + (slW + slGap) * 3: .Top = M + 26: .Width = slW: .Height = 14
+        .Orientation = fmOrientationHorizontal
+        .Min = 100: .Max = 400
+        .SmallChange = 10: .LargeChange = 50
+        .Value = CLng(m_rightW)
+    End With
+
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
-    With m_mpgTabs: .Left = cx: .Top = M + 26: .Width = centerW: .Height = ch - 66: End With
+    With m_mpgTabs: .Left = cx: .Top = M + 44: .Width = centerW: .Height = ch - 84: End With
     m_mpgTabs.Pages(0).Caption = "Detail"
     Do While m_mpgTabs.Pages.Count > 1: m_mpgTabs.Pages.Remove 1: Loop
 
-    Dim rx As Single: rx = LEFT_W + centerW + M * 3
+    Dim rx As Single: rx = m_leftW + centerW + M * 3
     Dim lblLogTitle As MSForms.Label
-    Set lblLogTitle = AddLabel(Me, "lblLogTitle", rx, M, RIGHT_W - 54, 16)
+    Set lblLogTitle = AddLabel(Me, "lblLogTitle", rx, M, m_rightW - 54, 16)
     lblLogTitle.Caption = "Change Log": lblLogTitle.Font.Bold = True
-    Set m_cmdLogClear = AddButton(Me, "cmdLogClear", rx + RIGHT_W - 50, M, 50, 18, "Clear")
-    Set m_lstLog = AddListBox(Me, "lstLog", rx, M + 22, RIGHT_W, ch - 62)
+    Set m_cmdLogClear = AddButton(Me, "cmdLogClear", rx + m_rightW - 50, M, 50, 18, "Clear")
+    Set m_lstLog = AddListBox(Me, "lstLog", rx, M + 22, m_rightW, ch - 62)
     m_lstLog.Font.Name = "Consolas": m_lstLog.Font.Size = 9
 
     Set m_lblStatus = AddLabel(Me, "lblStatus", 0, ch - 18, cw, 16)
@@ -183,21 +203,30 @@ Private Sub BuildLayout()
 ErrHandler: eh.Catch
 End Sub
 
-Private Sub MakeResizable()
-    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "MakeResizable"
-    On Error GoTo ErrHandler
-    #If VBA7 Then
-        Dim hWnd As LongPtr
-    #Else
-        Dim hWnd As Long
-    #End If
-    hWnd = FindWindowA("ThunderDFrame", Me.Caption)
-    If hWnd = 0 Then Exit Sub
-    Dim style As Long: style = GetWindowLong(hWnd, GWL_STYLE)
-    SetWindowLong hWnd, GWL_STYLE, style Or WS_THICKFRAME Or WS_MAXIMIZEBOX
-    DrawMenuBar hWnd
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
+Private Sub m_sbarLeft_Change()
+    If m_loading Then Exit Sub
+    m_leftW = m_sbarLeft.Value
+    RepositionControls
+End Sub
+
+Private Sub m_sbarWidth_Change()
+    If m_loading Then Exit Sub
+    Me.Width = m_sbarWidth.Value
+    m_lastWidth = Me.Width: m_lastHeight = Me.Height
+    RepositionControls
+End Sub
+
+Private Sub m_sbarHeight_Change()
+    If m_loading Then Exit Sub
+    Me.Height = m_sbarHeight.Value
+    m_lastWidth = Me.Width: m_lastHeight = Me.Height
+    RepositionControls
+End Sub
+
+Private Sub m_sbarRight_Change()
+    If m_loading Then Exit Sub
+    m_rightW = m_sbarRight.Value
+    RepositionControls
 End Sub
 
 Private Sub RepositionControls()
@@ -205,16 +234,51 @@ Private Sub RepositionControls()
     On Error GoTo ErrHandler
     Dim cw As Single: cw = Me.InsideWidth
     Dim ch As Single: ch = Me.InsideHeight
-    If cw < 600 Or ch < 300 Then Exit Sub
-    Dim centerW As Single: centerW = cw - LEFT_W - RIGHT_W - M * 4
-    Dim cx As Single: cx = LEFT_W + M * 2
-    Dim rx As Single: rx = LEFT_W + centerW + M * 3
-    m_lstRecords.Height = ch - 84
-    m_lblCount.Top = ch - 36
-    m_mpgTabs.Width = centerW: m_mpgTabs.Height = ch - 66
-    m_lstLog.Left = rx: m_lstLog.Width = RIGHT_W: m_lstLog.Height = ch - 62
-    m_cmdLogClear.Left = rx + RIGHT_W - 50
-    Me.Controls("lblLogTitle").Left = rx
+    If cw < m_leftW + m_rightW + M * 4 + 20 Or ch < 300 Then Exit Sub
+    Dim centerW As Single: centerW = cw - m_leftW - m_rightW - M * 4
+    If centerW < 60 Then Exit Sub
+    Dim cx As Single: cx = m_leftW + M * 2
+    Dim rx As Single: rx = m_leftW + centerW + M * 3
+
+    ' Left column
+    m_cmbSource.Width = m_leftW
+    m_txtFilter.Width = m_leftW
+    m_lstRecords.Width = m_leftW: m_lstRecords.Height = ch - 84
+    m_lblCount.Width = m_leftW: m_lblCount.Top = ch - 36
+
+    ' Toolbar buttons
+    m_cmdSync.Left = cx
+    m_cmdSettings.Left = cx + 54
+    m_cmdCreateFolder.Left = cx + 118
+
+    ' 4 sliders (fixed size, reposition left)
+    Dim slW As Single: slW = 47
+    Dim slGap As Single: slGap = 4
+    m_sbarLeft.Left = cx
+    m_sbarWidth.Left = cx + (slW + slGap)
+    m_sbarHeight.Left = cx + (slW + slGap) * 2
+    m_sbarRight.Left = cx + (slW + slGap) * 3
+    ' Sync slider values
+    m_loading = True
+    Dim curW As Long: curW = CLng(Me.Width)
+    If curW >= SIZE_MIN_W And curW <= SIZE_MAX_W Then
+        If m_sbarWidth.Value <> curW Then m_sbarWidth.Value = curW
+    End If
+    Dim curH As Long: curH = CLng(Me.Height)
+    If curH >= SIZE_MIN_H And curH <= SIZE_MAX_H Then
+        If m_sbarHeight.Value <> curH Then m_sbarHeight.Value = curH
+    End If
+    m_loading = False
+
+    ' Center (tabs)
+    m_mpgTabs.Left = cx: m_mpgTabs.Top = M + 44
+    m_mpgTabs.Width = centerW: m_mpgTabs.Height = ch - 84
+
+    ' Right column (log)
+    m_lstLog.Left = rx: m_lstLog.Width = m_rightW: m_lstLog.Height = ch - 62
+    m_cmdLogClear.Left = rx + m_rightW - 50
+    Me.Controls("lblLogTitle").Left = rx: Me.Controls("lblLogTitle").Width = m_rightW - 54
+
     m_lblStatus.Top = ch - 18: m_lblStatus.Width = cw
     ResizeTabContents
     eh.OK: Exit Sub
@@ -337,12 +401,12 @@ Private Sub SwitchSource(sourceName As String)
     Set m_currentTable = FolioData.FindTable(GetDataWorkbook(), sourceName)
     If m_currentTable Is Nothing Then m_loading = False: Exit Sub
 
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.EnsureSourceConfig(m_config, sourceName)
-    FolioConfig.InitFieldSettingsFromTable srcCfg, m_currentTable
+    FolioConfig.EnsureSource sourceName
+    FolioConfig.InitFieldSettingsFromTable sourceName, m_currentTable
 
-    Dim mailFolder As String: mailFolder = DictStr(m_config, "mail_folder")
+    Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
     If Len(mailFolder) > 0 Then Set m_allMailRecords = FolioData.ReadMailArchive(mailFolder) Else Set m_allMailRecords = New Collection
-    Dim caseRoot As String: caseRoot = DictStr(m_config, "case_folder_root")
+    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
     If Len(caseRoot) > 0 Then Set m_folderRecords = FolioData.ReadCaseFolders(caseRoot) Else Set m_folderRecords = New Collection
 
     BuildFieldEditors
@@ -371,25 +435,19 @@ Private Sub BuildFieldEditors()
     m_fieldGroupPageCount = 0
 
     If m_currentTable Is Nothing Then Exit Sub
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, m_currentSource)
-    If srcCfg Is Nothing Then Exit Sub
-    Dim fs As Object: Set fs = DictObj(srcCfg, "field_settings")
-    If fs Is Nothing Then Exit Sub
+    Dim fields As Collection: Set fields = FolioConfig.GetFieldNames(m_currentSource)
+    If fields.Count = 0 Then Exit Sub
 
-    Dim fields As New Collection
-    Dim keys() As Variant: keys = fs.keys
-    Dim i As Long
-    For i = 0 To UBound(keys): fields.Add CStr(keys(i)): Next i
-
-    Dim keyCol As String: keyCol = DictStr(srcCfg, "key_column")
+    Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
     Dim hasGroups As Boolean: hasGroups = (CountFieldGroups(fields) >= 2)
 
     If Not hasGroups Then
         pg.Caption = "Detail"
-        AddFieldEditorsToPage pg, fields, fs, keyCol
+        AddFieldEditorsToPage pg, fields, keyCol
     Else
         Dim groups As Object: Set groups = NewDict()
         Dim groupOrder As New Collection
+        Dim i As Long
         For i = 1 To fields.Count
             Dim fn As String: fn = CStr(fields(i))
             Dim g As String: g = GetFieldGroup(fn)
@@ -408,13 +466,13 @@ Private Sub BuildFieldEditors()
             If gi = 1 Then
                 pg.Caption = IIf(gName = "_other", "Other", gName)
                 Set gc = groups(gName)
-                AddFieldEditorsToPage pg, gc, fs, keyCol
+                AddFieldEditorsToPage pg, gc, keyCol
             Else
                 m_mpgTabs.Pages.Add
                 Dim newPg As MSForms.Page: Set newPg = m_mpgTabs.Pages(m_mpgTabs.Pages.Count - 1)
                 newPg.Caption = IIf(gName = "_other", "Other", gName)
                 Set gc = groups(gName)
-                AddFieldEditorsToPage newPg, gc, fs, keyCol
+                AddFieldEditorsToPage newPg, gc, keyCol
             End If
         Next gi
         m_fieldGroupPageCount = groupOrder.Count - 1
@@ -423,7 +481,7 @@ Private Sub BuildFieldEditors()
 ErrHandler: eh.Catch
 End Sub
 
-Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, fs As Object, keyCol As String)
+Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyCol As String)
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "AddFieldEditorsToPage"
     On Error GoTo ErrHandler
     Dim pw As Single: pw = m_mpgTabs.Width - 16
@@ -446,9 +504,8 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, fs A
     Dim i As Long
     For i = 1 To fields.Count
         Dim fn As String: fn = CStr(fields(i))
-        Dim fld As Object: Set fld = DictObj(fs, fn)
-        Dim isMultiline As Boolean: isMultiline = DictBool(fld, "multiline")
-        Dim isEditable As Boolean: isEditable = DictBool(fld, "editable", True)
+        Dim isMultiline As Boolean: isMultiline = FolioConfig.GetFieldBool(m_currentSource, fn, "multiline")
+        Dim isEditable As Boolean: isEditable = FolioConfig.GetFieldBool(m_currentSource, fn, "editable", True)
         If fn = keyCol Then isEditable = False
         Dim rowH As Single: rowH = IIf(isMultiline, 54, 20)
 
@@ -465,7 +522,7 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, fs A
         txt.Locked = Not isEditable
         If Not isEditable Then txt.BackColor = RGB(240, 240, 240)
         If isMultiline Then txt.MultiLine = True: txt.ScrollBars = fmScrollBarsVertical: txt.WordWrap = True
-        Dim fType As String: fType = DictStr(fld, "type", "text")
+        Dim fType As String: fType = FolioConfig.GetFieldStr(m_currentSource, fn, "type", "text")
         If fType = "number" Then txt.TextAlign = fmTextAlignRight
 
         Dim editor As FieldEditor
@@ -499,10 +556,8 @@ Private Sub BuildJoinedTabs()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "BuildJoinedTabs"
     On Error GoTo ErrHandler
     m_mailPageIdx = -1: m_filesPageIdx = -1
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, m_currentSource)
-    If srcCfg Is Nothing Then Exit Sub
 
-    If Len(DictStr(srcCfg, "mail_link_column")) > 0 And m_allMailRecords.Count > 0 Then
+    If Len(FolioConfig.GetSourceStr(m_currentSource, "mail_link_column")) > 0 And m_allMailRecords.Count > 0 Then
         m_mpgTabs.Pages.Add
         m_mailPageIdx = m_mpgTabs.Pages.Count - 1
         Dim pgMail As MSForms.Page: Set pgMail = m_mpgTabs.Pages(m_mailPageIdx)
@@ -510,7 +565,7 @@ Private Sub BuildJoinedTabs()
         BuildMailPage pgMail
     End If
 
-    If Len(DictStr(srcCfg, "folder_link_column")) > 0 And m_folderRecords.Count > 0 Then
+    If Len(FolioConfig.GetSourceStr(m_currentSource, "folder_link_column")) > 0 And m_folderRecords.Count > 0 Then
         m_mpgTabs.Pages.Add
         m_filesPageIdx = m_mpgTabs.Pages.Count - 1
         Dim pgFiles As MSForms.Page: Set pgFiles = m_mpgTabs.Pages(m_filesPageIdx)
@@ -592,19 +647,13 @@ Private Sub UpdateRecordList()
     Dim rowCount As Long: rowCount = TableRowCount()
     If rowCount = 0 Then Exit Sub
 
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, m_currentSource)
-    If srcCfg Is Nothing Then Exit Sub
-    Dim fs As Object: Set fs = DictObj(srcCfg, "field_settings")
+    Dim allFields As Collection: Set allFields = FolioConfig.GetFieldNames(m_currentSource)
 
     Dim dispCols As New Collection
-    If Not fs Is Nothing Then
-        Dim fKeys() As Variant: fKeys = fs.keys
-        Dim k As Long
-        For k = 0 To UBound(fKeys)
-            Dim fld As Object: Set fld = DictObj(fs, CStr(fKeys(k)))
-            If DictBool(fld, "in_list") Then dispCols.Add CStr(fKeys(k))
-        Next k
-    End If
+    Dim k As Long
+    For k = 1 To allFields.Count
+        If FolioConfig.GetFieldBool(m_currentSource, CStr(allFields(k)), "in_list") Then dispCols.Add CStr(allFields(k))
+    Next k
     If dispCols.Count = 0 Then
         Dim col As ListColumn
         Dim dc As Long: dc = 0
@@ -631,11 +680,7 @@ Private Sub UpdateRecordList()
         Dim ci As Long
         For ci = 1 To dispCols.Count
             Dim cn As String: cn = CStr(dispCols(ci))
-            Dim fType As String: fType = "text"
-            If Not fs Is Nothing Then
-                Dim fInfo As Object: Set fInfo = DictObj(fs, cn)
-                If Not fInfo Is Nothing Then fType = DictStr(fInfo, "type", "text")
-            End If
+            Dim fType As String: fType = FolioConfig.GetFieldStr(m_currentSource, cn, "type", "text")
             Dim cv As Variant: cv = TableCellValue(r, cn)
             If Len(label) > 0 Then label = label & " | "
             label = label & FormatFieldValue(cv, fType)
@@ -717,9 +762,7 @@ Private Sub UpdateMailTab()
     m_txtMailBody.Text = "": m_lstAttach.Clear
 
     If m_currentRecIdx < 1 Then Exit Sub
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, m_currentSource)
-    If srcCfg Is Nothing Then Exit Sub
-    Dim linkCol As String: linkCol = DictStr(srcCfg, "mail_link_column")
+    Dim linkCol As String: linkCol = FolioConfig.GetSourceStr(m_currentSource, "mail_link_column")
     If Len(linkCol) = 0 Then Exit Sub
 
     Dim linkVar As Variant: linkVar = TableCellValue(m_currentRecIdx, linkCol)
@@ -756,9 +799,7 @@ Private Sub UpdateFilesTab()
     Set m_fileTreeItems = New Collection
 
     If m_currentRecIdx < 1 Then Exit Sub
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, m_currentSource)
-    If srcCfg Is Nothing Then Exit Sub
-    Dim linkCol As String: linkCol = DictStr(srcCfg, "folder_link_column")
+    Dim linkCol As String: linkCol = FolioConfig.GetSourceStr(m_currentSource, "folder_link_column")
     If Len(linkCol) = 0 Then Exit Sub
 
     Dim linkVar As Variant: linkVar = TableCellValue(m_currentRecIdx, linkCol)
@@ -770,7 +811,7 @@ Private Sub UpdateFilesTab()
 
     ' Build tree: group by folder_path, show folder nodes then files
     Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
-    Dim caseRoot As String: caseRoot = DictStr(m_config, "case_folder_root")
+    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
     Dim folders As Object: Set folders = NewDict()
     Dim folderOrder As New Collection
     Dim i As Long
@@ -839,8 +880,7 @@ Public Sub OnFieldChanged(fieldName As String, oldVal As String, newVal As Strin
     If origin = "local" And m_currentRecIdx > 0 Then
         FolioData.WriteTableCell m_currentTable, m_currentRecIdx, fieldName, newVal
     End If
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, m_currentSource)
-    Dim keyCol As String: keyCol = DictStr(srcCfg, "key_column")
+    Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
     Dim keyVal As String
     Dim kv As Variant: kv = TableCellValue(m_currentRecIdx, keyCol)
     If Not IsNull(kv) And Not IsEmpty(kv) Then keyVal = CStr(kv)
@@ -961,9 +1001,9 @@ Private Sub RefreshJoinedData()
     Dim prevMailCount As Long: prevMailCount = m_allMailRecords.Count
     Dim prevFolderCount As Long: prevFolderCount = m_folderRecords.Count
 
-    Dim mailFolder As String: mailFolder = DictStr(m_config, "mail_folder")
+    Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
     If Len(mailFolder) > 0 Then Set m_allMailRecords = FolioData.ReadMailArchive(mailFolder)
-    Dim caseRoot As String: caseRoot = DictStr(m_config, "case_folder_root")
+    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
     If Len(caseRoot) > 0 Then Set m_folderRecords = FolioData.ReadCaseFolders(caseRoot)
 
     ' Log changes in mail/folder counts
@@ -1038,10 +1078,8 @@ Private Sub m_cmdSettings_Click()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdSettings_Click"
     On Error GoTo ErrHandler
 
-    FolioConfig.SaveActiveConfig m_config
     frmSettings.Show vbModal
-    Set m_config = FolioConfig.GetActiveConfig()
-    Me.Caption = "folio - " & FolioConfig.GetActiveProfileName()
+    Me.Caption = "folio"
     LoadSources
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -1051,11 +1089,10 @@ Private Sub m_cmdCreateFolder_Click()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdCreateFolder_Click"
     On Error GoTo ErrHandler
     If m_currentRecIdx < 1 Then Exit Sub
-    Dim caseRoot As String: caseRoot = DictStr(m_config, "case_folder_root")
+    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
     If Len(caseRoot) = 0 Then Debug.Print "Case folder root not configured.": Exit Sub
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, m_currentSource)
-    Dim keyCol As String: keyCol = DictStr(srcCfg, "key_column")
-    Dim nameCol As String: nameCol = DictStr(srcCfg, "display_name_column")
+    Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
+    Dim nameCol As String: nameCol = FolioConfig.GetSourceStr(m_currentSource, "display_name_column")
     Dim caseId As String
     Dim kv As Variant: kv = TableCellValue(m_currentRecIdx, keyCol)
     If Not IsNull(kv) And Not IsEmpty(kv) Then caseId = CStr(kv)
@@ -1183,22 +1220,34 @@ End Sub
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "QueryClose"
     On Error GoTo ErrHandler
+    FolioMain.g_formLoaded = False
     FolioMain.StopPolling
 
     If FolioMain.g_forceClose Then
+        CleanupRefs
         eh.OK: Exit Sub
     End If
 
-    Dim ui As Object: Set ui = DictObj(m_config, "ui_state")
-    If ui Is Nothing Then Set ui = NewDict(): DictPut m_config, "ui_state", ui
-    DictPut ui, "window_width", CLng(Me.Width)
-    DictPut ui, "window_height", CLng(Me.Height)
-    DictPut ui, "selected_source", m_currentSource
-    DictPut ui, "search_text", m_txtFilter.Text
-    FolioConfig.SaveActiveConfig m_config
-    On Error Resume Next
-    ThisWorkbook.Save
-    On Error GoTo ErrHandler
+    FolioConfig.SetLng "window_width", CLng(Me.Width)
+    FolioConfig.SetLng "window_height", CLng(Me.Height)
+    FolioConfig.SetLng "left_width", CLng(m_leftW)
+    FolioConfig.SetLng "right_width", CLng(m_rightW)
+    FolioConfig.SetStr "selected_source", m_currentSource
+    FolioConfig.SetStr "search_text", m_txtFilter.Text
+    CleanupRefs
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
+End Sub
+
+Private Sub CleanupRefs()
+    On Error Resume Next
+    Set m_currentTable = Nothing
+    Set m_filteredRows = Nothing
+    Set m_fieldEditors = Nothing
+    Set m_allMailRecords = Nothing
+    Set m_matchedMails = Nothing
+    Set m_folderRecords = Nothing
+    Set m_fileTreeItems = Nothing
+    Set m_undoStack = Nothing
+    On Error GoTo 0
 End Sub

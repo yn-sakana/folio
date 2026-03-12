@@ -17,10 +17,6 @@ Option Explicit
 ' ============================================================================
 ' Controls
 ' ============================================================================
-Private WithEvents m_cmbProfile As MSForms.ComboBox
-Private WithEvents m_cmdNewProfile As MSForms.CommandButton
-Private WithEvents m_cmdDelProfile As MSForms.CommandButton
-Private WithEvents m_cmdRenProfile As MSForms.CommandButton
 Private WithEvents m_mpgTabs As MSForms.MultiPage
 Private WithEvents m_cmbSource As MSForms.ComboBox
 Private WithEvents m_cmbKeyCol As MSForms.ComboBox
@@ -45,8 +41,7 @@ Private m_txtPollInterval As MSForms.TextBox
 ' ============================================================================
 ' State
 ' ============================================================================
-Private m_config As Object
-Private m_profileName As String
+Private m_currentSource As String
 Private m_currentField As String
 Private m_suppressEvents As Boolean
 
@@ -62,16 +57,8 @@ Private Sub UserForm_Initialize()
     Me.Width = 640: Me.Height = 480
     m_suppressEvents = True
     BuildLayout
-    LoadProfiles
+    LoadConfig
     m_suppressEvents = False
-    If m_cmbProfile.ListCount > 0 Then
-        Dim active As String: active = FolioConfig.GetActiveProfileName()
-        Dim i As Long
-        For i = 0 To m_cmbProfile.ListCount - 1
-            If m_cmbProfile.List(i) = active Then m_cmbProfile.ListIndex = i: Exit For
-        Next i
-        If m_cmbProfile.ListIndex < 0 Then m_cmbProfile.ListIndex = 0
-    End If
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -86,22 +73,9 @@ Private Sub BuildLayout()
     Dim cw As Single: cw = Me.InsideWidth
     Dim ch As Single: ch = Me.InsideHeight
 
-    ' --- Profile selector ---
-    Dim lblP As MSForms.Label
-    Set lblP = AddLabel(Me, "lblProfile", M, M, 50, 14)
-    lblP.Caption = "Profile:"
-
-    Set m_cmbProfile = Me.Controls.Add("Forms.ComboBox.1", "cmbProfile")
-    m_cmbProfile.Left = 60: m_cmbProfile.Top = M: m_cmbProfile.Width = 200: m_cmbProfile.Height = 18
-    m_cmbProfile.Style = fmStyleDropDownList
-
-    Set m_cmdNewProfile = AddBtn(Me, "cmdNew", 270, M, 40, 20, "New")
-    Set m_cmdRenProfile = AddBtn(Me, "cmdRen", 314, M, 55, 20, "Rename")
-    Set m_cmdDelProfile = AddBtn(Me, "cmdDel", 373, M, 50, 20, "Delete")
-
     ' --- Tab control ---
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
-    m_mpgTabs.Left = M: m_mpgTabs.Top = 32: m_mpgTabs.Width = cw - M * 2: m_mpgTabs.Height = ch - 72
+    m_mpgTabs.Left = M: m_mpgTabs.Top = M: m_mpgTabs.Width = cw - M * 2: m_mpgTabs.Height = ch - 48
     m_mpgTabs.Pages(0).Caption = "Paths"
     Do While m_mpgTabs.Pages.Count > 1: m_mpgTabs.Pages.Remove 1: Loop
     m_mpgTabs.Pages.Add
@@ -212,52 +186,29 @@ End Sub
 ' ============================================================================
 
 Private Function AddLabel(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single) As MSForms.Label
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "AddLabel"
-    On Error GoTo ErrHandler
     Set AddLabel = container.Controls.Add("Forms.Label.1", nm)
     With AddLabel: .Left = l: .Top = t: .Width = w: .Height = h: End With
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
 End Function
 
 Private Function AddBtn(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single, cap As String) As MSForms.CommandButton
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "AddBtn"
-    On Error GoTo ErrHandler
     Set AddBtn = container.Controls.Add("Forms.CommandButton.1", nm)
     With AddBtn: .Left = l: .Top = t: .Width = w: .Height = h: .Caption = cap: End With
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
 End Function
 
 ' ============================================================================
-' Profile Management
+' Config Loading
 ' ============================================================================
 
-Private Sub LoadProfiles()
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "LoadProfiles"
-    On Error GoTo ErrHandler
-    m_cmbProfile.Clear
-    Dim names As Collection: Set names = FolioConfig.GetProfileNames()
-    Dim n As Variant
-    For Each n In names
-        m_cmbProfile.AddItem CStr(n)
-    Next n
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-Private Sub LoadProfileConfig()
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "LoadProfileConfig"
+Private Sub LoadConfig()
+    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "LoadConfig"
     On Error GoTo ErrHandler
     m_suppressEvents = True
-    m_profileName = m_cmbProfile.Text
-    Set m_config = FolioConfig.LoadProfile(m_profileName)
 
     ' Paths
-    m_txtSelfAddr.Text = DictStr(m_config, "self_address")
-    m_txtMailFolder.Text = DictStr(m_config, "mail_folder")
-    m_txtCaseFolder.Text = DictStr(m_config, "case_folder_root")
-    m_txtPollInterval.Text = CStr(DictLng(m_config, "poll_interval", 5))
+    m_txtSelfAddr.Text = FolioConfig.GetStr("self_address")
+    m_txtMailFolder.Text = FolioConfig.GetStr("mail_folder")
+    m_txtCaseFolder.Text = FolioConfig.GetStr("case_folder_root")
+    m_txtPollInterval.Text = CStr(FolioConfig.GetLng("poll_interval", 5))
 
     ' Sources
     m_cmbSource.Clear
@@ -282,19 +233,20 @@ Private Sub LoadSourceSettings()
     Dim sourceName As String: sourceName = m_cmbSource.Text
     If Len(sourceName) = 0 Then m_suppressEvents = False: eh.OK: Exit Sub
 
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.EnsureSourceConfig(m_config, sourceName)
+    FolioConfig.EnsureSource sourceName
 
-    ' Fill column combos
+    ' Init field settings from table if available
     Dim cols As New Collection
     Dim wb As Workbook: Set wb = GetDataWorkbook()
     If Not wb Is Nothing Then
         Dim tbl As ListObject: Set tbl = FolioData.FindTable(wb, sourceName)
         If Not tbl Is Nothing Then
             Set cols = FolioData.GetTableColumnNames(tbl)
-            FolioConfig.InitFieldSettingsFromTable srcCfg, tbl
+            FolioConfig.InitFieldSettingsFromTable sourceName, tbl
         End If
     End If
 
+    ' Fill column combos
     Dim combos As Variant: combos = Array(m_cmbKeyCol, m_cmbNameCol, m_cmbMailCol, m_cmbFolderCol)
     Dim configKeys As Variant: configKeys = Array("key_column", "display_name_column", "mail_link_column", "folder_link_column")
     Dim ci As Long
@@ -304,7 +256,7 @@ Private Sub LoadSourceSettings()
         cmb.AddItem ""
         Dim c As Variant
         For Each c In cols: cmb.AddItem CStr(c): Next c
-        Dim val As String: val = DictStr(srcCfg, CStr(configKeys(ci)))
+        Dim val As String: val = FolioConfig.GetSourceStr(sourceName, CStr(configKeys(ci)))
         Dim fi As Long
         For fi = 0 To cmb.ListCount - 1
             If cmb.List(fi) = val Then cmb.ListIndex = fi: Exit For
@@ -314,12 +266,9 @@ Private Sub LoadSourceSettings()
     ' Field settings list
     m_lstFields.Clear
     m_currentField = ""
-    Dim fs As Object: Set fs = DictObj(srcCfg, "field_settings")
-    If Not fs Is Nothing Then
-        Dim fKeys() As Variant: fKeys = fs.keys
-        Dim k As Long
-        For k = 0 To UBound(fKeys): m_lstFields.AddItem CStr(fKeys(k)): Next k
-    End If
+    Dim fieldNames As Collection: Set fieldNames = FolioConfig.GetFieldNames(sourceName)
+    Dim fn As Variant
+    For Each fn In fieldNames: m_lstFields.AddItem CStr(fn): Next fn
     If m_lstFields.ListCount > 0 Then m_lstFields.ListIndex = 0
 
     m_suppressEvents = False
@@ -338,21 +287,14 @@ Private Sub LoadFieldDetail()
     m_currentField = fieldName
     If Len(fieldName) = 0 Or Len(sourceName) = 0 Then m_suppressEvents = False: eh.OK: Exit Sub
 
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, sourceName)
-    If srcCfg Is Nothing Then m_suppressEvents = False: eh.OK: Exit Sub
-    Dim fs As Object: Set fs = DictObj(srcCfg, "field_settings")
-    If fs Is Nothing Then m_suppressEvents = False: eh.OK: Exit Sub
-    Dim fld As Object: Set fld = DictObj(fs, fieldName)
-    If fld Is Nothing Then m_suppressEvents = False: eh.OK: Exit Sub
-
-    Dim fType As String: fType = DictStr(fld, "type", "text")
+    Dim fType As String: fType = FolioConfig.GetFieldStr(sourceName, fieldName, "type", "text")
     Dim ti As Long
     For ti = 0 To m_cmbFieldType.ListCount - 1
         If m_cmbFieldType.List(ti) = fType Then m_cmbFieldType.ListIndex = ti: Exit For
     Next ti
-    m_chkInList.Value = DictBool(fld, "in_list")
-    m_chkEditable.Value = DictBool(fld, "editable", True)
-    m_chkMultiline.Value = DictBool(fld, "multiline")
+    m_chkInList.Value = FolioConfig.GetFieldBool(sourceName, fieldName, "in_list")
+    m_chkEditable.Value = FolioConfig.GetFieldBool(sourceName, fieldName, "editable", True)
+    m_chkMultiline.Value = FolioConfig.GetFieldBool(sourceName, fieldName, "multiline")
 
     m_suppressEvents = False
     eh.OK: Exit Sub
@@ -366,16 +308,10 @@ Private Sub SaveFieldDetail()
     If Len(m_currentField) = 0 Then eh.OK: Exit Sub
     Dim sourceName As String: sourceName = m_cmbSource.Text
     If Len(sourceName) = 0 Then eh.OK: Exit Sub
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.GetSourceConfig(m_config, sourceName)
-    If srcCfg Is Nothing Then eh.OK: Exit Sub
-    Dim fs As Object: Set fs = DictObj(srcCfg, "field_settings")
-    If fs Is Nothing Then eh.OK: Exit Sub
-    Dim fld As Object: Set fld = DictObj(fs, m_currentField)
-    If fld Is Nothing Then eh.OK: Exit Sub
-    DictPut fld, "type", IIf(m_cmbFieldType.ListIndex >= 0, m_cmbFieldType.Text, "text")
-    DictPut fld, "in_list", m_chkInList.Value
-    DictPut fld, "editable", m_chkEditable.Value
-    DictPut fld, "multiline", m_chkMultiline.Value
+    FolioConfig.SetFieldStr sourceName, m_currentField, "type", IIf(m_cmbFieldType.ListIndex >= 0, m_cmbFieldType.Text, "text")
+    FolioConfig.SetFieldBool sourceName, m_currentField, "in_list", m_chkInList.Value
+    FolioConfig.SetFieldBool sourceName, m_currentField, "editable", m_chkEditable.Value
+    FolioConfig.SetFieldBool sourceName, m_currentField, "multiline", m_chkMultiline.Value
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -384,11 +320,11 @@ Private Sub SaveSourceSettings()
     Dim eh As New ErrorHandler: eh.Enter "frmSettings", "SaveSourceSettings"
     On Error GoTo ErrHandler
     If Len(m_cmbSource.Text) = 0 Then eh.OK: Exit Sub
-    Dim srcCfg As Object: Set srcCfg = FolioConfig.EnsureSourceConfig(m_config, m_cmbSource.Text)
-    DictPut srcCfg, "key_column", m_cmbKeyCol.Text
-    DictPut srcCfg, "display_name_column", m_cmbNameCol.Text
-    DictPut srcCfg, "mail_link_column", m_cmbMailCol.Text
-    DictPut srcCfg, "folder_link_column", m_cmbFolderCol.Text
+    Dim src As String: src = m_cmbSource.Text
+    FolioConfig.SetSourceStr src, "key_column", m_cmbKeyCol.Text
+    FolioConfig.SetSourceStr src, "display_name_column", m_cmbNameCol.Text
+    FolioConfig.SetSourceStr src, "mail_link_column", m_cmbMailCol.Text
+    FolioConfig.SetSourceStr src, "folder_link_column", m_cmbFolderCol.Text
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -396,61 +332,6 @@ End Sub
 ' ============================================================================
 ' Event Handlers
 ' ============================================================================
-
-Private Sub m_cmbProfile_Change()
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "cmbProfile_Change"
-    On Error GoTo ErrHandler
-    If m_suppressEvents Then eh.OK: Exit Sub
-    LoadProfileConfig
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-Private Sub m_cmdNewProfile_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "cmdNewProfile_Click"
-    On Error GoTo ErrHandler
-    Dim name As String: name = InputBox("New profile name:", "New Profile")
-    If Len(Trim$(name)) = 0 Then eh.OK: Exit Sub
-    FolioConfig.SaveProfile name, FolioConfig.NewDefaultConfig()
-    LoadProfiles
-    Dim i As Long
-    For i = 0 To m_cmbProfile.ListCount - 1
-        If m_cmbProfile.List(i) = name Then m_cmbProfile.ListIndex = i: Exit For
-    Next i
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-Private Sub m_cmdDelProfile_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "cmdDelProfile_Click"
-    On Error GoTo ErrHandler
-    If m_cmbProfile.ListIndex < 0 Then eh.OK: Exit Sub
-    Dim name As String: name = m_cmbProfile.Text
-    If LCase$(name) = "default" Then MsgBox "Cannot delete default profile.", vbInformation: eh.OK: Exit Sub
-    If MsgBox("Delete profile '" & name & "'?", vbYesNo + vbQuestion) = vbNo Then eh.OK: Exit Sub
-    FolioConfig.DeleteProfile name
-    LoadProfiles
-    If m_cmbProfile.ListCount > 0 Then m_cmbProfile.ListIndex = 0
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-Private Sub m_cmdRenProfile_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "cmdRenProfile_Click"
-    On Error GoTo ErrHandler
-    If m_cmbProfile.ListIndex < 0 Then eh.OK: Exit Sub
-    Dim oldName As String: oldName = m_cmbProfile.Text
-    Dim newName As String: newName = InputBox("New name:", "Rename Profile", oldName)
-    If Len(Trim$(newName)) = 0 Or newName = oldName Then eh.OK: Exit Sub
-    FolioConfig.RenameProfile oldName, newName
-    LoadProfiles
-    Dim i As Long
-    For i = 0 To m_cmbProfile.ListCount - 1
-        If m_cmbProfile.List(i) = newName Then m_cmbProfile.ListIndex = i: Exit For
-    Next i
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
 
 Private Sub m_cmbSource_Change()
     Dim eh As New ErrorHandler: eh.Enter "frmSettings", "cmbSource_Change"
@@ -522,28 +403,19 @@ ErrHandler: eh.Catch
 End Sub
 
 Private Function GetDataWorkbook() As Workbook
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "GetDataWorkbook"
-    On Error GoTo ErrHandler
     Dim wb As Workbook
     For Each wb In Application.Workbooks
         If wb.Name <> ThisWorkbook.Name Then
-            Set GetDataWorkbook = wb
-            eh.OK: Exit Function
+            Set GetDataWorkbook = wb: Exit Function
         End If
     Next wb
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
 End Function
 
 Private Function BrowseFolder(title As String) As String
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "BrowseFolder"
-    On Error GoTo ErrHandler
     With Application.FileDialog(msoFileDialogFolderPicker)
         .title = title
         If .Show = -1 Then BrowseFolder = .SelectedItems(1)
     End With
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
 End Function
 
 Private Sub m_cmdSave_Click()
@@ -551,31 +423,22 @@ Private Sub m_cmdSave_Click()
     On Error GoTo ErrHandler
     SaveFieldDetail
     SaveSourceSettings
-    DictPut m_config, "self_address", m_txtSelfAddr.Text
-    DictPut m_config, "mail_folder", m_txtMailFolder.Text
-    DictPut m_config, "case_folder_root", m_txtCaseFolder.Text
+    FolioConfig.SetStr "self_address", m_txtSelfAddr.Text
+    FolioConfig.SetStr "mail_folder", m_txtMailFolder.Text
+    FolioConfig.SetStr "case_folder_root", m_txtCaseFolder.Text
     Dim pollVal As Long: pollVal = 5
     If IsNumeric(m_txtPollInterval.Text) Then pollVal = CLng(m_txtPollInterval.Text)
     If pollVal < 1 Then pollVal = 1
-    DictPut m_config, "poll_interval", pollVal
-    FolioConfig.SaveProfile m_profileName, m_config
-    FolioConfig.SetActiveProfile m_profileName
+    FolioConfig.SetLng "poll_interval", pollVal
     Unload Me
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
 
 Private Sub m_cmdCancel_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "cmdCancel_Click"
-    On Error GoTo ErrHandler
     Unload Me
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
 End Sub
 
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
-    Dim eh As New ErrorHandler: eh.Enter "frmSettings", "UserForm_QueryClose"
-    On Error GoTo ErrHandler
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
+    ' Nothing to clean up
 End Sub

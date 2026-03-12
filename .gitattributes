@@ -1,0 +1,4 @@
+# VBA files must use CRLF (VBE requires it)
+*.bas eol=crlf
+*.cls eol=crlf
+*.frm eol=crlf
