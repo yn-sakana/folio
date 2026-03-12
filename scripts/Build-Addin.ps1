@@ -1,4 +1,4 @@
-# Build-Addin.ps1
+﻿# Build-Addin.ps1
 # VBAソースファイルをインポートした開発用.xlsmを自動生成する
 #
 # 前提条件:
@@ -33,7 +33,8 @@ $basModules = @(
 )
 $clsModules = @(
     'ErrorHandler.cls',
-    'FieldEditor.cls'
+    'FieldEditor.cls',
+    'SheetWatcher.cls'
 )
 $frmModules = @(
     @{ Name = 'frmFolio';   File = 'frmFolio.frm' },
@@ -160,10 +161,6 @@ End Sub
     $srcSheet.Range("E1").Value2 = "folder_link_column"
     if ($Sample) {
         $srcSheet.Range("A2").Value2 = "anken"
-        $srcSheet.Range("B2").Value2 = "基本_案件ID"
-        $srcSheet.Range("C2").Value2 = "基本_案件名"
-        $srcSheet.Range("D2").Value2 = "申請者_担当者メール"
-        $srcSheet.Range("E2").Value2 = "基本_案件ID"
     }
 
     # _folio_fields: one row per source+field

@@ -21,9 +21,7 @@ Private WithEvents m_cmbSource As MSForms.ComboBox
 Private WithEvents m_txtFilter As MSForms.TextBox
 Private WithEvents m_lstRecords As MSForms.ListBox
 Private WithEvents m_mpgTabs As MSForms.MultiPage
-Private WithEvents m_cmdSync As MSForms.CommandButton
 Private WithEvents m_cmdSettings As MSForms.CommandButton
-Private WithEvents m_cmdCreateFolder As MSForms.CommandButton
 Private WithEvents m_cmdResize As MSForms.CommandButton
 Private WithEvents m_cmdLogClear As MSForms.CommandButton
 Private WithEvents m_lstMail As MSForms.ListBox
@@ -50,6 +48,7 @@ Private m_fieldEditors As Collection
 Private m_allMailRecords As Collection
 Private m_matchedMails As Collection
 Private m_folderRecords As Collection
+Private m_watcher As SheetWatcher
 Private m_fileTreeItems As Collection
 Private m_undoStack As Collection
 Private m_loading As Boolean
@@ -137,10 +136,8 @@ Private Sub BuildLayout()
     m_lstRecords.Font.Name = "Meiryo": m_lstRecords.Font.Size = m_fontSize
 
     Dim cx As Single: cx = m_leftW + M * 2
-    Set m_cmdSync = AddButton(Me, "cmdSync", cx, M, 50, 22, "Sync")
-    Set m_cmdSettings = AddButton(Me, "cmdSettings", cx + 54, M, 60, 22, "Settings")
-    Set m_cmdCreateFolder = AddButton(Me, "cmdNewFolder", cx + 118, M, 80, 22, "New Folder")
-    Set m_cmdResize = AddButton(Me, "cmdResize", cx + 202, M, 22, 22, "R")
+    Set m_cmdSettings = AddButton(Me, "cmdSettings", cx, M, 60, 22, "Settings")
+    Set m_cmdResize = AddButton(Me, "cmdResize", cx + 64, M, 22, 22, "R")
     m_cmdResize.Font.Size = 8
 
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
@@ -227,10 +224,8 @@ Private Sub RepositionControls()
     m_lstRecords.Width = m_leftW: m_lstRecords.Height = ch - 74
 
     ' Toolbar buttons
-    m_cmdSync.Left = cx
-    m_cmdSettings.Left = cx + 54
-    m_cmdCreateFolder.Left = cx + 118
-    m_cmdResize.Left = cx + 202
+    m_cmdSettings.Left = cx
+    m_cmdResize.Left = cx + 64
 
     ' Center (tabs)
     m_mpgTabs.Left = cx: m_mpgTabs.Top = M + 26
@@ -426,6 +421,11 @@ Private Sub SwitchSource(sourceName As String)
     m_currentSource = sourceName
     Set m_currentTable = FolioData.FindTable(GetDataWorkbook(), sourceName)
     If m_currentTable Is Nothing Then m_loading = False: Exit Sub
+
+    ' Watch table sheet for immediate change detection
+    If Not m_watcher Is Nothing Then m_watcher.StopWatching
+    Set m_watcher = New SheetWatcher
+    m_watcher.Watch m_currentTable.Parent, sourceName, Me
 
     FolioConfig.EnsureSource sourceName
     FolioConfig.InitFieldSettingsFromTable sourceName, m_currentTable
@@ -1096,6 +1096,17 @@ ErrHandler: eh.Catch
 End Sub
 
 ' ============================================================================
+' Table Change (via SheetWatcher)
+' ============================================================================
+
+Public Sub OnTableChanged()
+    If m_loading Then Exit Sub
+    On Error Resume Next
+    RefreshCurrentRecord
+    On Error GoTo 0
+End Sub
+
+' ============================================================================
 ' Poll Cycle
 ' ============================================================================
 
@@ -1106,7 +1117,6 @@ Public Sub DoPollCycle()
         m_lastWidth = Me.Width: m_lastHeight = Me.Height
         RepositionControls
     End If
-    If m_currentRecIdx > 0 And Not m_loading Then RefreshCurrentRecord
     If Len(m_currentSource) > 0 And Not m_loading Then RefreshJoinedData
     On Error GoTo 0
 End Sub
@@ -1191,17 +1201,6 @@ Private Sub m_lstRecords_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
 ErrHandler: eh.Catch
 End Sub
 
-Private Sub m_cmdSync_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdSync_Click"
-    On Error GoTo ErrHandler
-    m_lblStatus.Caption = "  Syncing..."
-    Me.Repaint
-    If Len(m_currentSource) > 0 Then SwitchSource m_currentSource
-    m_lblStatus.Caption = "  Synced at " & Format$(Now, "hh:nn:ss")
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
 Private Sub m_cmdSettings_Click()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdSettings_Click"
     On Error GoTo ErrHandler
@@ -1209,30 +1208,6 @@ Private Sub m_cmdSettings_Click()
     frmSettings.Show vbModal
     Me.Caption = "folio"
     LoadSources
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-Private Sub m_cmdCreateFolder_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdCreateFolder_Click"
-    On Error GoTo ErrHandler
-    If m_currentRecIdx < 1 Then Exit Sub
-    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
-    If Len(caseRoot) = 0 Then Debug.Print "Case folder root not configured.": Exit Sub
-    Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
-    Dim nameCol As String: nameCol = FolioConfig.GetSourceStr(m_currentSource, "display_name_column")
-    Dim caseId As String
-    Dim kv As Variant: kv = TableCellValue(m_currentRecIdx, keyCol)
-    If Not IsNull(kv) And Not IsEmpty(kv) Then caseId = CStr(kv)
-    Dim displayName As String
-    If Len(nameCol) > 0 Then
-        Dim nv As Variant: nv = TableCellValue(m_currentRecIdx, nameCol)
-        If Not IsNull(nv) And Not IsEmpty(nv) Then displayName = CStr(nv)
-    End If
-    FolioData.CreateCaseFolder caseRoot, caseId, displayName
-    Set m_folderRecords = FolioData.ReadCaseFolders(caseRoot)
-    m_lblStatus.Caption = "  Folder created: " & caseId
-    UpdateFilesTab
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1337,7 +1312,6 @@ Private Sub UserForm_KeyDown(ByVal KeyCode As MSForms.ReturnInteger, ByVal Shift
             Case vbKeyZ: InvokeUndo: KeyCode = 0
         End Select
     End If
-    If KeyCode = vbKeyF5 Then m_cmdSync_Click: KeyCode = 0
     On Error GoTo 0
 End Sub
 
@@ -1366,6 +1340,8 @@ End Sub
 
 Private Sub CleanupRefs()
     On Error Resume Next
+    If Not m_watcher Is Nothing Then m_watcher.StopWatching
+    Set m_watcher = Nothing
     Set m_currentTable = Nothing
     Set m_filteredRows = Nothing
     Set m_fieldEditors = Nothing
