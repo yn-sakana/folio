@@ -70,6 +70,7 @@ End Sub
 Private Sub BuildLayout()
     Dim eh As New ErrorHandler: eh.Enter "frmSettings", "BuildLayout"
     On Error GoTo ErrHandler
+    Me.BackColor = &H8000000F
     Dim cw As Single: cw = Me.InsideWidth
     Dim ch As Single: ch = Me.InsideHeight
 
@@ -90,12 +91,14 @@ Private Sub BuildLayout()
     pgPaths.Controls("lblSelf").Caption = "Self address:"
     Set m_txtSelfAddr = pgPaths.Controls.Add("Forms.TextBox.1", "txtSelfAddr")
     m_txtSelfAddr.Left = 100: m_txtSelfAddr.Top = y: m_txtSelfAddr.Width = pw - 108: m_txtSelfAddr.Height = 18
+    m_txtSelfAddr.SpecialEffect = fmSpecialEffectSunken: m_txtSelfAddr.Font.Name = "MS UI Gothic": m_txtSelfAddr.Font.Size = 9
     y = y + 26
 
     AddLabel pgPaths, "lblMail", M, y, 80, 14
     pgPaths.Controls("lblMail").Caption = "Mail folder:"
     Set m_txtMailFolder = pgPaths.Controls.Add("Forms.TextBox.1", "txtMailFolder")
     m_txtMailFolder.Left = 100: m_txtMailFolder.Top = y: m_txtMailFolder.Width = pw - 148: m_txtMailFolder.Height = 18
+    m_txtMailFolder.SpecialEffect = fmSpecialEffectSunken: m_txtMailFolder.Font.Name = "MS UI Gothic": m_txtMailFolder.Font.Size = 9
     Set m_cmdBrowseMail = AddBtn(pgPaths, "cmdBrMail", pw - 40, y, 32, 20, "...")
     y = y + 26
 
@@ -103,6 +106,7 @@ Private Sub BuildLayout()
     pgPaths.Controls("lblCase").Caption = "Case folder:"
     Set m_txtCaseFolder = pgPaths.Controls.Add("Forms.TextBox.1", "txtCaseFolder")
     m_txtCaseFolder.Left = 100: m_txtCaseFolder.Top = y: m_txtCaseFolder.Width = pw - 148: m_txtCaseFolder.Height = 18
+    m_txtCaseFolder.SpecialEffect = fmSpecialEffectSunken: m_txtCaseFolder.Font.Name = "MS UI Gothic": m_txtCaseFolder.Font.Size = 9
     Set m_cmdBrowseCase = AddBtn(pgPaths, "cmdBrCase", pw - 40, y, 32, 20, "...")
     y = y + 26
 
@@ -110,6 +114,7 @@ Private Sub BuildLayout()
     pgPaths.Controls("lblPoll").Caption = "Poll interval:"
     Set m_txtPollInterval = pgPaths.Controls.Add("Forms.TextBox.1", "txtPollInterval")
     m_txtPollInterval.Left = 100: m_txtPollInterval.Top = y: m_txtPollInterval.Width = 40: m_txtPollInterval.Height = 18
+    m_txtPollInterval.SpecialEffect = fmSpecialEffectSunken: m_txtPollInterval.Font.Name = "MS UI Gothic": m_txtPollInterval.Font.Size = 9
     AddLabel pgPaths, "lblPollSec", 144, y, 30, 14
     pgPaths.Controls("lblPollSec").Caption = "sec"
 
@@ -122,6 +127,7 @@ Private Sub BuildLayout()
     Set m_cmbSource = pgSrc.Controls.Add("Forms.ComboBox.1", "cmbSrcSel")
     m_cmbSource.Left = 60: m_cmbSource.Top = y: m_cmbSource.Width = 200: m_cmbSource.Height = 18
     m_cmbSource.Style = fmStyleDropDownList
+    m_cmbSource.SpecialEffect = fmSpecialEffectSunken: m_cmbSource.Font.Name = "MS UI Gothic": m_cmbSource.Font.Size = 9
     y = y + 24
 
     ' Column combos
@@ -134,6 +140,8 @@ Private Sub BuildLayout()
         Set colCombos(ci) = pgSrc.Controls.Add("Forms.ComboBox.1", "cmbCol" & ci)
         colCombos(ci).Left = 80: colCombos(ci).Top = y: colCombos(ci).Width = 180: colCombos(ci).Height = 18
         colCombos(ci).Style = fmStyleDropDownCombo
+        colCombos(ci).SpecialEffect = fmSpecialEffectSunken
+        colCombos(ci).Font.Name = "MS UI Gothic": colCombos(ci).Font.Size = 9
         y = y + 22
     Next ci
     Set m_cmbKeyCol = colCombos(0)
@@ -150,6 +158,7 @@ Private Sub BuildLayout()
     Set m_lstFields = pgSrc.Controls.Add("Forms.ListBox.1", "lstFields")
     m_lstFields.Left = M: m_lstFields.Top = y: m_lstFields.Width = 180
     m_lstFields.Height = m_mpgTabs.Height - y - 40
+    m_lstFields.SpecialEffect = fmSpecialEffectSunken: m_lstFields.Font.Name = "MS UI Gothic": m_lstFields.Font.Size = 9
 
     ' Field detail area (right of list)
     Dim fx As Single: fx = 200
@@ -158,6 +167,7 @@ Private Sub BuildLayout()
     Set m_cmbFieldType = pgSrc.Controls.Add("Forms.ComboBox.1", "cmbFType")
     m_cmbFieldType.Left = fx + 44: m_cmbFieldType.Top = y: m_cmbFieldType.Width = 100: m_cmbFieldType.Height = 18
     m_cmbFieldType.Style = fmStyleDropDownList
+    m_cmbFieldType.SpecialEffect = fmSpecialEffectSunken: m_cmbFieldType.Font.Name = "MS UI Gothic": m_cmbFieldType.Font.Size = 9
     m_cmbFieldType.AddItem "text"
     m_cmbFieldType.AddItem "date"
     m_cmbFieldType.AddItem "number"
@@ -165,14 +175,17 @@ Private Sub BuildLayout()
     Set m_chkInList = pgSrc.Controls.Add("Forms.CheckBox.1", "chkInList")
     m_chkInList.Left = fx: m_chkInList.Top = y + 24: m_chkInList.Width = 150: m_chkInList.Height = 18
     m_chkInList.Caption = "Show in list"
+    m_chkInList.Font.Name = "MS UI Gothic": m_chkInList.Font.Size = 9
 
     Set m_chkEditable = pgSrc.Controls.Add("Forms.CheckBox.1", "chkEditable")
     m_chkEditable.Left = fx: m_chkEditable.Top = y + 44: m_chkEditable.Width = 150: m_chkEditable.Height = 18
     m_chkEditable.Caption = "Editable"
+    m_chkEditable.Font.Name = "MS UI Gothic": m_chkEditable.Font.Size = 9
 
     Set m_chkMultiline = pgSrc.Controls.Add("Forms.CheckBox.1", "chkMultiline")
     m_chkMultiline.Left = fx: m_chkMultiline.Top = y + 64: m_chkMultiline.Width = 150: m_chkMultiline.Height = 18
     m_chkMultiline.Caption = "Multiline"
+    m_chkMultiline.Font.Name = "MS UI Gothic": m_chkMultiline.Font.Size = 9
 
     ' --- Buttons ---
     Set m_cmdSave = AddBtn(Me, "cmdSave", cw - 170, ch - 34, 75, 26, "Save")
@@ -187,12 +200,18 @@ End Sub
 
 Private Function AddLabel(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single) As MSForms.Label
     Set AddLabel = container.Controls.Add("Forms.Label.1", nm)
-    With AddLabel: .Left = l: .Top = t: .Width = w: .Height = h: End With
+    With AddLabel
+        .Left = l: .Top = t: .Width = w: .Height = h
+        .Font.Name = "MS UI Gothic": .Font.Size = 9
+    End With
 End Function
 
 Private Function AddBtn(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single, cap As String) As MSForms.CommandButton
     Set AddBtn = container.Controls.Add("Forms.CommandButton.1", nm)
-    With AddBtn: .Left = l: .Top = t: .Width = w: .Height = h: .Caption = cap: End With
+    With AddBtn
+        .Left = l: .Top = t: .Width = w: .Height = h: .Caption = cap
+        .Font.Name = "MS UI Gothic": .Font.Size = 9
+    End With
 End Function
 
 ' ============================================================================

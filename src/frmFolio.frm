@@ -24,18 +24,15 @@ Private WithEvents m_mpgTabs As MSForms.MultiPage
 Private WithEvents m_cmdSync As MSForms.CommandButton
 Private WithEvents m_cmdSettings As MSForms.CommandButton
 Private WithEvents m_cmdCreateFolder As MSForms.CommandButton
-Private WithEvents m_sbarLeft As MSForms.ScrollBar
-Private WithEvents m_sbarWidth As MSForms.ScrollBar
-Private WithEvents m_sbarHeight As MSForms.ScrollBar
-Private WithEvents m_sbarRight As MSForms.ScrollBar
+Private WithEvents m_cmdResize As MSForms.CommandButton
 Private WithEvents m_cmdLogClear As MSForms.CommandButton
 Private WithEvents m_lstMail As MSForms.ListBox
 Private WithEvents m_lstAttach As MSForms.ListBox
 Private WithEvents m_lstFiles As MSForms.ListBox
 
 ' Non-event controls
-Private m_lblCount As MSForms.Label
 Private m_lblStatus As MSForms.Label
+Private m_lblCount As MSForms.Label
 Private m_lstLog As MSForms.ListBox
 Private m_lblSubject As MSForms.Label
 Private m_lblFrom As MSForms.Label
@@ -66,6 +63,7 @@ Private Const M As Long = 6
 Private Const UNDO_MAX As Long = 50
 Private m_leftW As Single
 Private m_rightW As Single
+Private m_fontSize As Long
 
 ' Window size range
 Private Const SIZE_MIN_W As Long = 730
@@ -91,6 +89,7 @@ Private Sub UserForm_Initialize()
 
     m_leftW = FolioConfig.GetLng("left_width", 250)
     m_rightW = FolioConfig.GetLng("right_width", 250)
+    m_fontSize = FolioConfig.GetLng("font_size", 10)
     Me.Width = FolioConfig.GetLng("window_width", 870)
     Me.Height = FolioConfig.GetLng("window_height", 540)
 
@@ -125,6 +124,7 @@ Private Sub BuildLayout()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "BuildLayout"
     On Error GoTo ErrHandler
     Me.Caption = "folio"
+    Me.BackColor = &H8000000F
 
     Dim cw As Single: cw = Me.InsideWidth
     Dim ch As Single: ch = Me.InsideHeight
@@ -133,101 +133,75 @@ Private Sub BuildLayout()
     Set m_cmbSource = AddCombo(Me, "cmbSource", M, M, m_leftW, 18)
     m_cmbSource.Style = fmStyleDropDownList
     Set m_txtFilter = AddTextBox(Me, "txtFilter", M, M + 22, m_leftW, 18)
-    Set m_lstRecords = AddListBox(Me, "lstRecords", M, M + 44, m_leftW, ch - 84)
-    m_lstRecords.Font.Name = "Consolas": m_lstRecords.Font.Size = 10
-    Set m_lblCount = AddLabel(Me, "lblCount", M, ch - 36, m_leftW, 14)
-    m_lblCount.TextAlign = fmTextAlignRight
-    m_lblCount.ForeColor = RGB(105, 105, 105)
+    Set m_lstRecords = AddListBox(Me, "lstRecords", M, M + 44, m_leftW, ch - 74)
+    m_lstRecords.Font.Name = "MS Gothic": m_lstRecords.Font.Size = m_fontSize
 
     Dim cx As Single: cx = m_leftW + M * 2
     Set m_cmdSync = AddButton(Me, "cmdSync", cx, M, 50, 22, "Sync")
     Set m_cmdSettings = AddButton(Me, "cmdSettings", cx + 54, M, 60, 22, "Settings")
     Set m_cmdCreateFolder = AddButton(Me, "cmdNewFolder", cx + 118, M, 80, 22, "New Folder")
-
-    ' 4 sliders: Left col | Width | Height | Right col
-    Dim slW As Single: slW = 47
-    Dim slGap As Single: slGap = 4
-    Set m_sbarLeft = Me.Controls.Add("Forms.ScrollBar.1", "sbarLeft")
-    With m_sbarLeft
-        .Left = cx: .Top = M + 26: .Width = slW: .Height = 14
-        .Orientation = fmOrientationHorizontal
-        .Min = 100: .Max = 400
-        .SmallChange = 10: .LargeChange = 50
-        .Value = CLng(m_leftW)
-    End With
-    Set m_sbarWidth = Me.Controls.Add("Forms.ScrollBar.1", "sbarWidth")
-    With m_sbarWidth
-        .Left = cx + (slW + slGap): .Top = M + 26: .Width = slW: .Height = 14
-        .Orientation = fmOrientationHorizontal
-        .Min = SIZE_MIN_W: .Max = SIZE_MAX_W
-        .SmallChange = 20: .LargeChange = 100
-        .Value = CLng(Me.Width)
-    End With
-    Set m_sbarHeight = Me.Controls.Add("Forms.ScrollBar.1", "sbarHeight")
-    With m_sbarHeight
-        .Left = cx + (slW + slGap) * 2: .Top = M + 26: .Width = slW: .Height = 14
-        .Orientation = fmOrientationHorizontal
-        .Min = SIZE_MIN_H: .Max = SIZE_MAX_H
-        .SmallChange = 20: .LargeChange = 100
-        .Value = CLng(Me.Height)
-    End With
-    Set m_sbarRight = Me.Controls.Add("Forms.ScrollBar.1", "sbarRight")
-    With m_sbarRight
-        .Left = cx + (slW + slGap) * 3: .Top = M + 26: .Width = slW: .Height = 14
-        .Orientation = fmOrientationHorizontal
-        .Min = 100: .Max = 400
-        .SmallChange = 10: .LargeChange = 50
-        .Value = CLng(m_rightW)
-    End With
+    Set m_cmdResize = AddButton(Me, "cmdResize", cx + 202, M, 22, 22, "R")
+    m_cmdResize.Font.Size = 8
 
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
-    With m_mpgTabs: .Left = cx: .Top = M + 44: .Width = centerW: .Height = ch - 84: End With
+    With m_mpgTabs: .Left = cx: .Top = M + 26: .Width = centerW: .Height = ch - 56: End With
     m_mpgTabs.Pages(0).Caption = "Detail"
     Do While m_mpgTabs.Pages.Count > 1: m_mpgTabs.Pages.Remove 1: Loop
 
     Dim rx As Single: rx = m_leftW + centerW + M * 3
-    Dim lblLogTitle As MSForms.Label
-    Set lblLogTitle = AddLabel(Me, "lblLogTitle", rx, M, m_rightW - 54, 16)
-    lblLogTitle.Caption = "Change Log": lblLogTitle.Font.Bold = True
-    Set m_cmdLogClear = AddButton(Me, "cmdLogClear", rx + m_rightW - 50, M, 50, 18, "Clear")
-    Set m_lstLog = AddListBox(Me, "lstLog", rx, M + 22, m_rightW, ch - 62)
-    m_lstLog.Font.Name = "Consolas": m_lstLog.Font.Size = 9
+    Set m_cmdLogClear = AddButton(Me, "cmdLogClear", rx, M, 40, 18, "Clear")
+    m_cmdLogClear.Font.Size = 8
+    Set m_lstLog = AddListBox(Me, "lstLog", rx, M + 22, m_rightW, ch - 52)
+    m_lstLog.Font.Name = "MS Gothic": m_lstLog.Font.Size = m_fontSize
 
-    Set m_lblStatus = AddLabel(Me, "lblStatus", 0, ch - 18, cw, 16)
+    ' Status bar: count (left) + status (right)
+    Dim sbTop As Single: sbTop = ch - 20
+    Set m_lblCount = AddLabel(Me, "lblCount", M, sbTop, m_leftW, 16)
+    m_lblCount.BackColor = &H8000000F
+    m_lblCount.SpecialEffect = fmSpecialEffectSunken
+    m_lblCount.Caption = "  0 records"
+    Set m_lblStatus = AddLabel(Me, "lblStatus", m_leftW + M * 2, sbTop, cw - m_leftW - M * 2, 16)
     m_lblStatus.BackColor = &H8000000F
-    m_lblStatus.BorderStyle = fmBorderStyleSingle
-    m_lblStatus.Caption = "Ready"
+    m_lblStatus.SpecialEffect = fmSpecialEffectSunken
+    m_lblStatus.Caption = "  Ready"
 
     LoadChangeLog
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
 
-Private Sub m_sbarLeft_Change()
-    If m_loading Then Exit Sub
-    m_leftW = m_sbarLeft.Value
-    RepositionControls
+Private Sub m_cmdResize_Click()
+    frmResize.ShowFor Me
 End Sub
 
-Private Sub m_sbarWidth_Change()
-    If m_loading Then Exit Sub
-    Me.Width = m_sbarWidth.Value
+' Called from frmResize
+Public Sub ApplyResize(newLeftW As Single, newRightW As Single, newWidth As Single, newHeight As Single, newFontSize As Long)
+    m_leftW = newLeftW
+    m_rightW = newRightW
+    m_fontSize = newFontSize
+    Me.Width = newWidth
+    Me.Height = newHeight
     m_lastWidth = Me.Width: m_lastHeight = Me.Height
+    ' Apply font
+    On Error Resume Next
+    m_lstRecords.Font.Size = m_fontSize
+    m_lstLog.Font.Size = m_fontSize
+    If Not m_lstMail Is Nothing Then m_lstMail.Font.Size = m_fontSize
+    If Not m_lstAttach Is Nothing Then m_lstAttach.Font.Size = m_fontSize
+    If Not m_lstFiles Is Nothing Then m_lstFiles.Font.Size = m_fontSize
+    If Not m_txtMailBody Is Nothing Then m_txtMailBody.Font.Size = m_fontSize
+    ' Field editors
+    Dim ei As Long
+    For ei = 1 To m_fieldEditors.Count
+        m_fieldEditors(ei).TextBox.Font.Size = m_fontSize
+    Next ei
+    On Error GoTo 0
     RepositionControls
 End Sub
 
-Private Sub m_sbarHeight_Change()
-    If m_loading Then Exit Sub
-    Me.Height = m_sbarHeight.Value
-    m_lastWidth = Me.Width: m_lastHeight = Me.Height
-    RepositionControls
-End Sub
-
-Private Sub m_sbarRight_Change()
-    If m_loading Then Exit Sub
-    m_rightW = m_sbarRight.Value
-    RepositionControls
-End Sub
+Public Property Get LeftW() As Single: LeftW = m_leftW: End Property
+Public Property Get RightW() As Single: RightW = m_rightW: End Property
+Public Property Get FontSize() As Long: FontSize = m_fontSize: End Property
 
 Private Sub RepositionControls()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "RepositionControls"
@@ -243,43 +217,27 @@ Private Sub RepositionControls()
     ' Left column
     m_cmbSource.Width = m_leftW
     m_txtFilter.Width = m_leftW
-    m_lstRecords.Width = m_leftW: m_lstRecords.Height = ch - 84
-    m_lblCount.Width = m_leftW: m_lblCount.Top = ch - 36
+    m_lstRecords.Width = m_leftW: m_lstRecords.Height = ch - 74
 
     ' Toolbar buttons
     m_cmdSync.Left = cx
     m_cmdSettings.Left = cx + 54
     m_cmdCreateFolder.Left = cx + 118
-
-    ' 4 sliders (fixed size, reposition left)
-    Dim slW As Single: slW = 47
-    Dim slGap As Single: slGap = 4
-    m_sbarLeft.Left = cx
-    m_sbarWidth.Left = cx + (slW + slGap)
-    m_sbarHeight.Left = cx + (slW + slGap) * 2
-    m_sbarRight.Left = cx + (slW + slGap) * 3
-    ' Sync slider values
-    m_loading = True
-    Dim curW As Long: curW = CLng(Me.Width)
-    If curW >= SIZE_MIN_W And curW <= SIZE_MAX_W Then
-        If m_sbarWidth.Value <> curW Then m_sbarWidth.Value = curW
-    End If
-    Dim curH As Long: curH = CLng(Me.Height)
-    If curH >= SIZE_MIN_H And curH <= SIZE_MAX_H Then
-        If m_sbarHeight.Value <> curH Then m_sbarHeight.Value = curH
-    End If
-    m_loading = False
+    m_cmdResize.Left = cx + 202
 
     ' Center (tabs)
-    m_mpgTabs.Left = cx: m_mpgTabs.Top = M + 44
-    m_mpgTabs.Width = centerW: m_mpgTabs.Height = ch - 84
+    m_mpgTabs.Left = cx: m_mpgTabs.Top = M + 26
+    m_mpgTabs.Width = centerW: m_mpgTabs.Height = ch - 56
 
     ' Right column (log)
-    m_lstLog.Left = rx: m_lstLog.Width = m_rightW: m_lstLog.Height = ch - 62
-    m_cmdLogClear.Left = rx + m_rightW - 50
-    Me.Controls("lblLogTitle").Left = rx: Me.Controls("lblLogTitle").Width = m_rightW - 54
+    m_lstLog.Left = rx: m_lstLog.Width = m_rightW: m_lstLog.Height = ch - 52
+    m_cmdLogClear.Left = rx
 
-    m_lblStatus.Top = ch - 18: m_lblStatus.Width = cw
+    ' Status bar
+    Dim sbTop As Single: sbTop = ch - 20
+    m_lblCount.Left = M: m_lblCount.Top = sbTop: m_lblCount.Width = m_leftW
+    m_lblStatus.Left = m_leftW + M * 2: m_lblStatus.Top = sbTop
+    m_lblStatus.Width = cw - m_leftW - M * 2
     ResizeTabContents
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -287,24 +245,57 @@ End Sub
 
 Private Sub ResizeTabContents()
     On Error Resume Next
-    Dim pi As Long
-    For pi = 0 To m_mpgTabs.Pages.Count - 1
-        Dim pg As MSForms.Page: Set pg = m_mpgTabs.Pages(pi)
-        Dim pw As Single: pw = m_mpgTabs.Width - 16
-        Dim ph As Single: ph = m_mpgTabs.Height - 36
+    Dim pw As Single: pw = m_mpgTabs.Width - 16
+    Dim ph As Single: ph = m_mpgTabs.Height - 36
+
+    ' Mail page: special layout
+    If m_mailPageIdx >= 0 Then
+        Dim pgM As MSForms.Page: Set pgM = m_mpgTabs.Pages(m_mailPageIdx)
+        If Not m_lstMail Is Nothing Then
+            m_lstMail.Width = pw: m_lstMail.Height = 80
+        End If
+        If Not m_lblSubject Is Nothing Then m_lblSubject.Width = pw - M * 2
+        If Not m_lblFrom Is Nothing Then m_lblFrom.Width = pw - M * 2
+        If Not m_lblDate Is Nothing Then m_lblDate.Width = pw - M * 2
+        If Not m_txtMailBody Is Nothing Then
+            m_txtMailBody.Width = pw
+            m_txtMailBody.Height = ph - 134 - 80
+        End If
+        ' Attachments label + list at bottom
         Dim ci As Long
-        For ci = 0 To pg.Controls.Count - 1
-            Dim ctl As MSForms.Control: Set ctl = pg.Controls(ci)
-            If TypeName(ctl) = "Frame" Then
-                ctl.Width = pw
-                ctl.Height = ph
-                ResizeFrameEditors ctl, pw
-            ElseIf TypeName(ctl) = "ListBox" Then
-                ctl.Width = pw: ctl.Height = ph
-            ElseIf TypeName(ctl) = "TextBox" Then
-                ctl.Width = pw
+        For ci = 0 To pgM.Controls.Count - 1
+            If TypeName(pgM.Controls(ci)) = "Label" Then
+                If pgM.Controls(ci).Caption Like "*Attachment*" Then
+                    pgM.Controls(ci).Top = ph - 78: pgM.Controls(ci).Width = pw
+                End If
             End If
         Next ci
+        If Not m_lstAttach Is Nothing Then
+            m_lstAttach.Width = pw: m_lstAttach.Top = ph - 64: m_lstAttach.Height = 64
+        End If
+    End If
+
+    ' Files page
+    If m_filesPageIdx >= 0 Then
+        If Not m_lstFiles Is Nothing Then
+            m_lstFiles.Width = pw: m_lstFiles.Height = ph
+        End If
+    End If
+
+    ' Other pages (field editors)
+    Dim pi As Long
+    For pi = 0 To m_mpgTabs.Pages.Count - 1
+        If pi = m_mailPageIdx Or pi = m_filesPageIdx Then GoTo NextPage
+        Dim pg As MSForms.Page: Set pg = m_mpgTabs.Pages(pi)
+        Dim fi As Long
+        For fi = 0 To pg.Controls.Count - 1
+            Dim ctl As MSForms.Control: Set ctl = pg.Controls(fi)
+            If TypeName(ctl) = "Frame" Then
+                ctl.Width = pw: ctl.Height = ph
+                ResizeFrameEditors ctl, pw
+            End If
+        Next fi
+NextPage:
     Next pi
     On Error GoTo 0
 End Sub
@@ -331,27 +322,46 @@ End Sub
 
 Private Function AddLabel(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single) As MSForms.Label
     Set AddLabel = container.Controls.Add("Forms.Label.1", nm)
-    With AddLabel: .Left = l: .Top = t: .Width = w: .Height = h: End With
+    With AddLabel
+        .Left = l: .Top = t: .Width = w: .Height = h
+        .Font.Name = "MS UI Gothic": .Font.Size = 9
+    End With
 End Function
 
 Private Function AddTextBox(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single) As MSForms.TextBox
     Set AddTextBox = container.Controls.Add("Forms.TextBox.1", nm)
-    With AddTextBox: .Left = l: .Top = t: .Width = w: .Height = h: End With
+    With AddTextBox
+        .Left = l: .Top = t: .Width = w: .Height = h
+        .SpecialEffect = fmSpecialEffectSunken
+        .BorderStyle = fmBorderStyleNone
+        .Font.Name = "MS UI Gothic": .Font.Size = 9
+    End With
 End Function
 
 Private Function AddListBox(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single) As MSForms.ListBox
     Set AddListBox = container.Controls.Add("Forms.ListBox.1", nm)
-    With AddListBox: .Left = l: .Top = t: .Width = w: .Height = h: End With
+    With AddListBox
+        .Left = l: .Top = t: .Width = w: .Height = h
+        .SpecialEffect = fmSpecialEffectSunken
+        .BorderStyle = fmBorderStyleNone
+    End With
 End Function
 
 Private Function AddCombo(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single) As MSForms.ComboBox
     Set AddCombo = container.Controls.Add("Forms.ComboBox.1", nm)
-    With AddCombo: .Left = l: .Top = t: .Width = w: .Height = h: End With
+    With AddCombo
+        .Left = l: .Top = t: .Width = w: .Height = h
+        .SpecialEffect = fmSpecialEffectSunken
+        .Font.Name = "MS UI Gothic": .Font.Size = 9
+    End With
 End Function
 
 Private Function AddButton(container As Object, nm As String, l As Single, t As Single, w As Single, h As Single, cap As String) As MSForms.CommandButton
     Set AddButton = container.Controls.Add("Forms.CommandButton.1", nm)
-    With AddButton: .Left = l: .Top = t: .Width = w: .Height = h: .Caption = cap: End With
+    With AddButton
+        .Left = l: .Top = t: .Width = w: .Height = h: .Caption = cap
+        .Font.Name = "MS UI Gothic": .Font.Size = 9
+    End With
 End Function
 
 ' ============================================================================
@@ -519,8 +529,9 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         Dim txt As MSForms.TextBox
         Set txt = fraScroll.Controls.Add("Forms.TextBox.1", "txt_" & fn)
         txt.Left = txtLeft: txt.Top = yPos: txt.Width = editorW: txt.Height = rowH
+        txt.Font.Name = "MS UI Gothic": txt.Font.Size = m_fontSize
         txt.Locked = Not isEditable
-        If Not isEditable Then txt.BackColor = RGB(240, 240, 240)
+        If Not isEditable Then txt.BackColor = &H8000000F
         If isMultiline Then txt.MultiLine = True: txt.ScrollBars = fmScrollBarsVertical: txt.WordWrap = True
         Dim fType As String: fType = FolioConfig.GetFieldStr(m_currentSource, fn, "type", "text")
         If fType = "number" Then txt.TextAlign = fmTextAlignRight
@@ -584,7 +595,7 @@ Private Sub BuildMailPage(pg As MSForms.Page)
 
     Set m_lstMail = pg.Controls.Add("Forms.ListBox.1", "lstMail")
     m_lstMail.Left = 0: m_lstMail.Top = 0: m_lstMail.Width = pw: m_lstMail.Height = 80
-    m_lstMail.Font.Name = "Consolas": m_lstMail.Font.Size = 10
+    m_lstMail.Font.Name = "MS Gothic": m_lstMail.Font.Size = m_fontSize
 
     Set m_lblSubject = AddLabel(pg, "lblSubject", M, 84, pw - M * 2, 14)
     m_lblSubject.Font.Bold = True
@@ -595,7 +606,8 @@ Private Sub BuildMailPage(pg As MSForms.Page)
     m_txtMailBody.Left = 0: m_txtMailBody.Top = 134: m_txtMailBody.Width = pw
     m_txtMailBody.Height = ph - 134 - 80
     m_txtMailBody.MultiLine = True: m_txtMailBody.ScrollBars = fmScrollBarsVertical
-    m_txtMailBody.Locked = True: m_txtMailBody.BackColor = RGB(255, 255, 255)
+    m_txtMailBody.Locked = True: m_txtMailBody.BackColor = &H8000000F
+    m_txtMailBody.Font.Name = "MS UI Gothic": m_txtMailBody.Font.Size = m_fontSize
 
     Dim lblAtt As MSForms.Label
     Set lblAtt = AddLabel(pg, "lblAtt", 0, ph - 78, pw, 14)
@@ -603,7 +615,7 @@ Private Sub BuildMailPage(pg As MSForms.Page)
 
     Set m_lstAttach = pg.Controls.Add("Forms.ListBox.1", "lstAttach")
     m_lstAttach.Left = 0: m_lstAttach.Top = ph - 64: m_lstAttach.Width = pw: m_lstAttach.Height = 64
-    m_lstAttach.Font.Name = "Consolas": m_lstAttach.Font.Size = 10
+    m_lstAttach.Font.Name = "MS Gothic": m_lstAttach.Font.Size = m_fontSize
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -615,7 +627,7 @@ Private Sub BuildFilesPage(pg As MSForms.Page)
     Dim ph As Single: ph = m_mpgTabs.Height - 30
     Set m_lstFiles = pg.Controls.Add("Forms.ListBox.1", "lstFiles")
     m_lstFiles.Left = 0: m_lstFiles.Top = 0: m_lstFiles.Width = pw: m_lstFiles.Height = ph
-    m_lstFiles.Font.Name = "Consolas": m_lstFiles.Font.Size = 10
+    m_lstFiles.Font.Name = "MS Gothic": m_lstFiles.Font.Size = m_fontSize
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -690,7 +702,7 @@ Private Sub UpdateRecordList()
 NextRec:
     Next r
 
-    m_lblCount.Caption = m_filteredRows.Count & IIf(Len(filterText) > 0, " / " & rowCount, "")
+    m_lblCount.Caption = "  " & m_filteredRows.Count & IIf(Len(filterText) > 0, " / " & rowCount, "") & " records"
     If m_lstRecords.ListCount > 0 Then m_lstRecords.ListIndex = 0
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -833,42 +845,104 @@ Private Sub UpdateFilesTab()
         rootPath = caseRoot & "\" & caseId
     End If
 
-    Dim fileCount As Long: fileCount = 0
+    ' Collect all tree nodes (folder + files) in order
+    Dim nodes As New Collection
     Dim fi As Long
     For fi = 1 To folderOrder.Count
         Dim folderPath As String: folderPath = CStr(folderOrder(fi))
-        ' Calculate relative path from case root for indent
         Dim folderName As String: folderName = fso.GetFileName(folderPath)
         Dim depth As Long: depth = 0
         If Len(rootPath) > 0 And Len(folderPath) > Len(rootPath) Then
             Dim relFolder As String: relFolder = Mid$(folderPath, Len(rootPath) + 2)
             depth = 1 + Len(relFolder) - Len(Replace(relFolder, "\", ""))
         End If
-        Dim indent As String: indent = ""
-        If depth > 0 Then indent = String$(depth * 2, " ")
-        m_lstFiles.AddItem indent & "[" & folderName & "]"
-        Dim folderItem As Object: Set folderItem = NewDict()
-        folderItem.Add "type", "folder"
-        folderItem.Add "path", folderPath
-        m_fileTreeItems.Add folderItem
+
+        Dim nd As Object
+        Set nd = NewDict()
+        nd.Add "depth", CLng(depth)
+        nd.Add "type", "folder"
+        nd.Add "name", folderName
+        nd.Add "path", folderPath
+        nodes.Add nd
 
         Set fc = folders(folderPath)
         Dim j As Long
         For j = 1 To fc.Count
             Set fr = fc(j)
-            m_lstFiles.AddItem indent & "   " & DictStr(fr, "file_name")
-            Dim fileItem As Object: Set fileItem = NewDict()
-            fileItem.Add "type", "file"
-            fileItem.Add "path", DictStr(fr, "file_path")
-            m_fileTreeItems.Add fileItem
-            fileCount = fileCount + 1
+            Set nd = NewDict()
+            nd.Add "depth", CLng(depth + 1)
+            nd.Add "type", "file"
+            nd.Add "name", DictStr(fr, "file_name")
+            nd.Add "path", DictStr(fr, "file_path")
+            nodes.Add nd
         Next j
     Next fi
+
+    ' Render tree with box-drawing characters
+    Dim fileCount As Long: fileCount = 0
+    Dim k As Long
+    For k = 1 To nodes.Count
+        Set nd = nodes(k)
+        Dim d As Long: d = CLng(nd("depth"))
+        Dim nm As String: nm = CStr(nd("name"))
+        Dim tp As String: tp = CStr(nd("type"))
+        Dim prefix As String: prefix = TreePrefix(nodes, k, d)
+
+        If tp = "folder" Then
+            m_lstFiles.AddItem prefix & "[" & nm & "]"
+        Else
+            m_lstFiles.AddItem prefix & nm
+            fileCount = fileCount + 1
+        End If
+
+        Dim treeItem As Object: Set treeItem = NewDict()
+        treeItem.Add "type", tp
+        treeItem.Add "path", CStr(nd("path"))
+        m_fileTreeItems.Add treeItem
+    Next k
 
     m_mpgTabs.Pages(m_filesPageIdx).Caption = "Files (" & fileCount & ")"
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
+
+Private Function TreePrefix(nodes As Collection, idx As Long, depth As Long) As String
+    If depth = 0 Then TreePrefix = "": Exit Function
+
+    ' Is this the last node at its depth?
+    Dim isLast As Boolean: isLast = True
+    Dim k As Long
+    For k = idx + 1 To nodes.Count
+        Dim d2 As Long: d2 = CLng(nodes(k)("depth"))
+        If d2 < depth Then Exit For
+        If d2 = depth Then isLast = False: Exit For
+    Next k
+
+    ' Build prefix for ancestor levels
+    Dim result As String: result = ""
+    Dim level As Long
+    For level = 1 To depth - 1
+        Dim hasMore As Boolean: hasMore = False
+        For k = idx + 1 To nodes.Count
+            d2 = CLng(nodes(k)("depth"))
+            If d2 < level Then Exit For
+            If d2 = level Then hasMore = True: Exit For
+        Next k
+        If hasMore Then
+            result = result & "|   "
+        Else
+            result = result & "    "
+        End If
+    Next level
+
+    ' Connector
+    If isLast Then
+        result = result & "+-- "
+    Else
+        result = result & "+-- "
+    End If
+    TreePrefix = result
+End Function
 
 ' ============================================================================
 ' Save / Undo
@@ -887,7 +961,7 @@ Public Sub OnFieldChanged(fieldName As String, oldVal As String, newVal As Strin
     FolioChangeLog.AddLogEntry m_currentSource, keyVal, fieldName, oldVal, newVal, origin
     AddLogLine m_currentSource, keyVal, fieldName, oldVal, newVal, origin
     If origin = "local" Then PushUndo m_currentSource, keyVal, fieldName, oldVal, newVal
-    m_lblStatus.Caption = origin & ": " & fieldName & " @ " & Format$(Now, "hh:nn:ss")
+    m_lblStatus.Caption = "  " & origin & ": " & fieldName & " @ " & Format$(Now, "hh:nn:ss")
 End Sub
 
 Private Sub PushUndo(src As String, key As String, field As String, oldVal As String, newVal As String)
@@ -908,7 +982,7 @@ End Sub
 Private Sub InvokeUndo()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "InvokeUndo"
     On Error GoTo ErrHandler
-    If m_undoStack.Count = 0 Then m_lblStatus.Caption = "Nothing to undo.": Exit Sub
+    If m_undoStack.Count = 0 Then m_lblStatus.Caption = "  Nothing to undo.": Exit Sub
     Dim entry As Object: Set entry = m_undoStack(m_undoStack.Count)
     m_undoStack.Remove m_undoStack.Count
 
@@ -924,7 +998,7 @@ Private Sub InvokeUndo()
     ' ControlSource binds TextBox to cell, so writing to cell auto-updates TextBox
     If m_currentRecIdx > 0 Then FolioData.WriteTableCell m_currentTable, m_currentRecIdx, field, oldVal
     ' ChangeEvent in FieldEditor will log this automatically
-    m_lblStatus.Caption = "Undone: " & field
+    m_lblStatus.Caption = "  Undone: " & field
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1066,10 +1140,10 @@ End Sub
 Private Sub m_cmdSync_Click()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdSync_Click"
     On Error GoTo ErrHandler
-    m_lblStatus.Caption = "Syncing..."
+    m_lblStatus.Caption = "  Syncing..."
     Me.Repaint
     If Len(m_currentSource) > 0 Then SwitchSource m_currentSource
-    m_lblStatus.Caption = "Synced at " & Format$(Now, "hh:nn:ss")
+    m_lblStatus.Caption = "  Synced at " & Format$(Now, "hh:nn:ss")
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1103,7 +1177,7 @@ Private Sub m_cmdCreateFolder_Click()
     End If
     FolioData.CreateCaseFolder caseRoot, caseId, displayName
     Set m_folderRecords = FolioData.ReadCaseFolders(caseRoot)
-    m_lblStatus.Caption = "Folder created: " & caseId
+    m_lblStatus.Caption = "  Folder created: " & caseId
     UpdateFilesTab
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -1157,7 +1231,7 @@ Private Sub m_lstMail_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
     If idx < 0 Or idx >= m_matchedMails.Count Then Exit Sub
     Dim mr As Object: Set mr = m_matchedMails(idx + 1)
     Dim msgPath As String: msgPath = DictStr(mr, "msg_path")
-    If Len(msgPath) > 0 And FileExists(msgPath) Then Shell "explorer.exe """ & msgPath & """", vbNormalFocus
+    If Len(msgPath) > 0 And FileExists(msgPath) Then ThisWorkbook.FollowHyperlink msgPath
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1172,7 +1246,7 @@ Private Sub m_lstAttach_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
     Dim mr As Object: Set mr = m_matchedMails(mi + 1)
     Dim aps As Object: Set aps = DictObj(mr, "attachment_paths")
     If aps Is Nothing Then Exit Sub
-    If ai + 1 <= aps.Count Then Shell "explorer.exe """ & CStr(aps(ai + 1)) & """", vbNormalFocus
+    If ai + 1 <= aps.Count Then ThisWorkbook.FollowHyperlink CStr(aps(ai + 1))
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1186,11 +1260,7 @@ Private Sub m_lstFiles_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
     Dim item As Object: Set item = m_fileTreeItems(idx + 1)
     Dim itemPath As String: itemPath = DictStr(item, "path")
     If Len(itemPath) = 0 Then Exit Sub
-    If DictStr(item, "type") = "folder" Then
-        Shell "explorer.exe """ & itemPath & """", vbNormalFocus
-    Else
-        Shell "explorer.exe /select,""" & itemPath & """", vbNormalFocus
-    End If
+    ThisWorkbook.FollowHyperlink itemPath
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1232,6 +1302,7 @@ Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     FolioConfig.SetLng "window_height", CLng(Me.Height)
     FolioConfig.SetLng "left_width", CLng(m_leftW)
     FolioConfig.SetLng "right_width", CLng(m_rightW)
+    FolioConfig.SetLng "font_size", m_fontSize
     FolioConfig.SetStr "selected_source", m_currentSource
     FolioConfig.SetStr "search_text", m_txtFilter.Text
     CleanupRefs

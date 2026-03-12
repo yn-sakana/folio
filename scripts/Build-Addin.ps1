@@ -36,7 +36,8 @@ $clsModules = @(
 )
 $frmModules = @(
     @{ Name = 'frmFolio';   File = 'frmFolio.frm' },
-    @{ Name = 'frmSettings'; File = 'frmSettings.frm' }
+    @{ Name = 'frmSettings'; File = 'frmSettings.frm' },
+    @{ Name = 'frmResize';  File = 'frmResize.frm' }
 )
 
 # --- Helper: extract code from .cls/.frm (skip VERSION/BEGIN/END/Attribute header) ---
