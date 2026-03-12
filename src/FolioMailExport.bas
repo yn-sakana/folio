@@ -2,6 +2,56 @@ Attribute VB_Name = "FolioMailExport"
 Option Explicit
 
 Private Const OLMSGUNICODE As Long = 9
+Private Const REG_APP As String = "FolioMailExport"
+Private Const REG_SECTION As String = "Settings"
+
+' ============================================================================
+' Launcher (Alt+F8)
+' ============================================================================
+
+Public Sub FolioMail_Run()
+    Dim exportRoot As String
+    Dim selfAddress As String
+
+    ' Load saved settings
+    exportRoot = GetSetting(REG_APP, REG_SECTION, "ExportRoot", "")
+    selfAddress = GetSetting(REG_APP, REG_SECTION, "SelfAddress", "")
+
+    ' First run: prompt for settings
+    If Len(exportRoot) = 0 Then
+        exportRoot = InputBox("Export folder path:" & vbCrLf & vbCrLf & _
+            "Mail data will be saved to this folder.", "FolioMailExport - Setup")
+        If Len(exportRoot) = 0 Then Exit Sub
+    End If
+    If Len(selfAddress) = 0 Then
+        selfAddress = InputBox("Your email address:" & vbCrLf & vbCrLf & _
+            "Only mail from this account will be exported.", "FolioMailExport - Setup")
+        If Len(selfAddress) = 0 Then Exit Sub
+    End If
+
+    ' Save settings
+    SaveSetting REG_APP, REG_SECTION, "ExportRoot", exportRoot
+    SaveSetting REG_APP, REG_SECTION, "SelfAddress", selfAddress
+
+    Dim stateFile As String
+    stateFile = exportRoot & "\.exported.json"
+
+    Dim count As Long
+    count = FolioMail_Export(exportRoot, stateFile, selfAddress)
+
+    MsgBox "Exported " & count & " new mail(s)." & vbCrLf & vbCrLf & _
+        "Output: " & exportRoot, vbInformation, "FolioMailExport"
+End Sub
+
+' Reset saved settings (run to reconfigure)
+Public Sub FolioMail_Reset()
+    DeleteSetting REG_APP, REG_SECTION
+    MsgBox "Settings cleared. Run FolioMail_Run to reconfigure.", vbInformation, "FolioMailExport"
+End Sub
+
+' ============================================================================
+' Export
+' ============================================================================
 
 Public Function FolioMail_Export(ByVal exportRoot As String, ByVal stateFilePath As String, ByVal selfAddress As String) As Long
     On Error GoTo ErrHandler
