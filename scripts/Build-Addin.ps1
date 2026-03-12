@@ -27,7 +27,6 @@ $basModules = @(
     'FolioData.bas',
     'FolioChangeLog.bas',
     'FolioMain.bas',
-    'FolioOutlook.bas',
     'FolioBundler.bas',
     'FolioSampleBuilder.bas'
 )

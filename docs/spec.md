@@ -23,7 +23,7 @@ folio は Excel VBA アドインとして動作する案件管理ツール。
 | GUI | MSForms UserForm（ランタイム生成コントロール） |
 | データ読み書き | ListObject API（直接セルアクセス） |
 | メール連携 | Outlook COM (下書き作成のみ) |
-| メールエクスポート | ShinsaOutlookExport.bas (Outlook VBA 側、folio 本体には組み込まない) |
+| メールエクスポート | FolioMailExport.bas (Outlook VBA 側、folio 本体には組み込まない) |
 | 案件フォルダ | FileSystemObject |
 | 設定保存 | 隠しシート + JSON シリアライズ |
 | ポーリング | Application.OnTime |
@@ -48,12 +48,11 @@ folio アドイン (*.xlsm)
   ├── FolioChangeLog (変更ログ永続化)
   ├── FolioMain (エントリポイント + ポーリング)
   ├── FolioHelpers (JSON・Dict・ファイル操作)
-  ├── FolioOutlook (Outlook 下書き作成)
   ├── FolioBundler (単一 .bas エクスポート)
   └── _folio_config / _folio_log (隠しシート)
 
 メールアーカイブ (ファイルシステム)
-  └── ShinsaOutlookExport.bas (Outlook VBA) で生成
+  └── FolioMailExport.bas (Outlook VBA) で生成
         → folio の mail_folder 設定で参照
 ```
 
@@ -205,7 +204,7 @@ TextBox.Change
 **メールアーカイブ:**
 - `ReadMailArchive(folderPath)` — フォルダを再帰スキャンし、meta.json を持つフォルダをメールレコードとして収集
 - 添付ファイルパスを絶対パスに解決
-- meta.json は ShinsaOutlookExport.bas が生成する形式と互換
+- meta.json は FolioMailExport.bas が生成する形式と互換
 
 **案件フォルダ:**
 - `ReadCaseFolders(rootPath)` — ルート直下のサブフォルダを案件として再帰スキャン
@@ -251,30 +250,29 @@ TextBox.Change
 - `number`: IsNumeric なら `#,0` / `#,0.##`
 - それ以外: CStr
 
-### 5.8 FolioOutlook.bas
-
-Outlook COM 経由で返信下書きを作成。送信はしない。
-
-### 5.9 FolioBundler.bas
+### 5.8 FolioBundler.bas
 
 全モジュールのコードを単一の `.bas` インストーラーファイルにエクスポートする。
 配布先の Excel で `Install_Folio` マクロを実行すると、モジュール・隠しシートが自動作成される。
 
-### 5.10 FolioSampleBuilder.bas
+### 5.9 FolioSampleBuilder.bas
 
 サンプルデータ（テーブル・メール・フォルダ）をゼロから生成する。
 `Alt+F8` → `Folio_BuildSample` で実行。
 
-### 5.11 ShinsaOutlookExport.bas
+### 5.10 FolioMailExport.bas (Outlook VBA)
 
 Outlook VBA にインポートして使うメールエクスポートモジュール。**folio 本体には組み込まない。**
 
-- `Shinsa_ExportMail(exportRoot, stateFilePath, selfAddress)` — 指定アカウントの全フォルダを再帰走査
+- 設定は `%APPDATA%\FolioMailExport\.foliomail.json` に保存
+- `FolioMail_Setup` — 設定ダイアログ (アカウント・フォルダ・期間・出力先)
+- `FolioMail_Run` — 手動エクスポート
+- `FolioMail_OnStartup` / `FolioMail_OnNewMail` — 自動エクスポート
 - メールごとに `meta.json` + `body.txt` + `mail.msg` + 添付ファイルを保存
-- エクスポート済み EntryID を状態ファイルで管理（差分エクスポート）
+- `meta.json` 存在チェックによる差分エクスポート
 - 出力形式は `FolioData.ReadMailArchive` と互換
 
-### 5.12 ErrorHandler.cls
+### 5.11 ErrorHandler.cls
 
 全モジュール共通のエラーハンドラ。Immediate ウィンドウにトレースを出力。
 
@@ -286,7 +284,7 @@ eh.OK: Exit Sub
 ErrHandler: eh.Catch
 ```
 
-### 5.13 frmSettings.frm
+### 5.12 frmSettings.frm
 
 設定フォーム（モーダル）。
 
@@ -336,7 +334,7 @@ DoPollCycle()
 ### 6.4 メールエクスポート（Outlook → ファイルシステム）
 
 ```text
-Outlook VBA: Shinsa_ExportMail(exportRoot, stateFile, selfAddress)
+Outlook VBA: FolioMail_Setup / FolioMail_Run / FolioMail_OnStartup
   → 全フォルダを再帰走査
   → 未エクスポートのメールを保存:
       mail_folder/account/folder_path/yyyymmdd_sender_subject/
@@ -440,7 +438,7 @@ VBA ソースファイルから `folio.xlsm` を生成する。
 7. サンプルパスで初期設定を書き込み
 8. .xlsm で保存
 
-**注意:** ShinsaOutlookExport.bas はビルド対象外（Outlook VBA 用）
+**注意:** FolioMailExport.bas はビルド対象外（Outlook VBA 用）
 
 ### 9.2 Build-Sample.ps1
 
@@ -475,14 +473,13 @@ folio/
 │   ├── FolioData.bas
 │   ├── FolioHelpers.bas
 │   ├── FolioChangeLog.bas
-│   ├── FolioOutlook.bas
 │   ├── FolioBundler.bas
 │   ├── FolioSampleBuilder.bas
 │   ├── ErrorHandler.cls
 │   ├── FieldEditor.cls
 │   ├── frmFolio.frm
 │   ├── frmSettings.frm
-│   └── ShinsaOutlookExport.bas  ← Outlook VBA 用（ビルド対象外）
+│   └── FolioMailExport.bas  ← Outlook VBA 用（ビルド対象外）
 ├── scripts/
 │   ├── Build-Addin.ps1
 │   ├── Build-Sample.ps1
@@ -511,7 +508,7 @@ folio/
 | 3-way merge 不使用 | 最後の書き込みが勝つ | Excel テーブル直接アクセスのため競合は OneDrive 側で管理 |
 | frmFolio.Visible 直接参照禁止 | g_formLoaded フラグで管理 | VB_PredeclaredId=True のフォームはプロパティ参照で自動再生成される |
 | フォーム閉じ時に全参照解放 | CleanupRefs で Nothing 代入 | 外部ワークブックの ListObject 参照が残ると COM デッドロック→フリーズ |
-| Outlook エクスポートは分離 | ShinsaOutlookExport.bas を Outlook VBA にインポート | Outlook COM の型参照が Excel VBA 側で不要、セキュリティ分離 |
+| Outlook エクスポートは分離 | FolioMailExport.bas を Outlook VBA にインポート | Outlook COM の型参照が Excel VBA 側で不要、セキュリティ分離 |
 
 ## 12. 今後の課題
 

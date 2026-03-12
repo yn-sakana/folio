@@ -69,8 +69,6 @@ Public Sub RunAllTests()
     TestCall fnum, "FolioData.GetWorkbookTableNames", ""
     TestCall fnum, "FolioData.FindTable", ""
 
-    ' --- FolioOutlook (skip - needs Outlook) ---
-
     ' --- FieldEditor (skip - class, needs form) ---
 
     ' --- frmFolio (instantiation test) ---
