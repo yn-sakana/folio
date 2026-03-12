@@ -124,7 +124,7 @@ Private Sub BuildLayout()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "BuildLayout"
     On Error GoTo ErrHandler
     Me.Caption = "folio"
-    Me.BackColor = &H8000000F
+    Me.BackColor = &HFFFFFF
 
     Dim cw As Single: cw = Me.InsideWidth
     Dim ch As Single: ch = Me.InsideHeight
@@ -134,7 +134,7 @@ Private Sub BuildLayout()
     m_cmbSource.Style = fmStyleDropDownList
     Set m_txtFilter = AddTextBox(Me, "txtFilter", M, M + 22, m_leftW, 18)
     Set m_lstRecords = AddListBox(Me, "lstRecords", M, M + 44, m_leftW, ch - 74)
-    m_lstRecords.Font.Name = "MS Gothic": m_lstRecords.Font.Size = m_fontSize
+    m_lstRecords.Font.Name = "Meiryo": m_lstRecords.Font.Size = m_fontSize
 
     Dim cx As Single: cx = m_leftW + M * 2
     Set m_cmdSync = AddButton(Me, "cmdSync", cx, M, 50, 22, "Sync")
@@ -144,7 +144,12 @@ Private Sub BuildLayout()
     m_cmdResize.Font.Size = 8
 
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
-    With m_mpgTabs: .Left = cx: .Top = M + 26: .Width = centerW: .Height = ch - 56: End With
+    With m_mpgTabs
+        .Left = cx: .Top = M + 26: .Width = centerW: .Height = ch - 56
+        .Font.Name = "Meiryo UI": .Font.Size = 9
+        .BackColor = &HFFFFFF
+        .Style = fmTabStyleButtons
+    End With
     m_mpgTabs.Pages(0).Caption = "Detail"
     Do While m_mpgTabs.Pages.Count > 1: m_mpgTabs.Pages.Remove 1: Loop
 
@@ -152,17 +157,19 @@ Private Sub BuildLayout()
     Set m_cmdLogClear = AddButton(Me, "cmdLogClear", rx, M, 40, 18, "Clear")
     m_cmdLogClear.Font.Size = 8
     Set m_lstLog = AddListBox(Me, "lstLog", rx, M + 22, m_rightW, ch - 52)
-    m_lstLog.Font.Name = "MS Gothic": m_lstLog.Font.Size = m_fontSize
+    m_lstLog.Font.Name = "Meiryo": m_lstLog.Font.Size = m_fontSize
 
     ' Status bar: count (left) + status (right)
     Dim sbTop As Single: sbTop = ch - 20
     Set m_lblCount = AddLabel(Me, "lblCount", M, sbTop, m_leftW, 16)
-    m_lblCount.BackColor = &H8000000F
-    m_lblCount.SpecialEffect = fmSpecialEffectSunken
+    m_lblCount.BackColor = &HF0F0F0
+    m_lblCount.SpecialEffect = fmSpecialEffectFlat
+    m_lblCount.BorderStyle = fmBorderStyleSingle
     m_lblCount.Caption = "  0 records"
     Set m_lblStatus = AddLabel(Me, "lblStatus", m_leftW + M * 2, sbTop, cw - m_leftW - M * 2, 16)
-    m_lblStatus.BackColor = &H8000000F
-    m_lblStatus.SpecialEffect = fmSpecialEffectSunken
+    m_lblStatus.BackColor = &HF0F0F0
+    m_lblStatus.SpecialEffect = fmSpecialEffectFlat
+    m_lblStatus.BorderStyle = fmBorderStyleSingle
     m_lblStatus.Caption = "  Ready"
 
     LoadChangeLog
@@ -250,28 +257,34 @@ Private Sub ResizeTabContents()
 
     ' Mail page: special layout
     If m_mailPageIdx >= 0 Then
-        Dim pgM As MSForms.Page: Set pgM = m_mpgTabs.Pages(m_mailPageIdx)
+        Dim mailListH As Single: mailListH = 70
+        Dim hdrH As Single: hdrH = 54
+        Dim attH As Single: attH = 60
+        Dim hdrTop As Single: hdrTop = mailListH + 4
+        Dim bodyTop As Single: bodyTop = hdrTop + hdrH
+        Dim bodyH As Single: bodyH = ph - bodyTop - attH - 20
+
         If Not m_lstMail Is Nothing Then
-            m_lstMail.Width = pw: m_lstMail.Height = 80
+            m_lstMail.Width = pw: m_lstMail.Height = mailListH
         End If
-        If Not m_lblSubject Is Nothing Then m_lblSubject.Width = pw - M * 2
-        If Not m_lblFrom Is Nothing Then m_lblFrom.Width = pw - M * 2
-        If Not m_lblDate Is Nothing Then m_lblDate.Width = pw - M * 2
+        If Not m_lblSubject Is Nothing Then m_lblSubject.Width = pw - 16: m_lblSubject.Top = hdrTop
+        If Not m_lblFrom Is Nothing Then m_lblFrom.Width = pw - 16: m_lblFrom.Top = hdrTop + 20
+        If Not m_lblDate Is Nothing Then m_lblDate.Width = pw - 16: m_lblDate.Top = hdrTop + 34
         If Not m_txtMailBody Is Nothing Then
-            m_txtMailBody.Width = pw
-            m_txtMailBody.Height = ph - 134 - 80
+            m_txtMailBody.Width = pw: m_txtMailBody.Top = bodyTop: m_txtMailBody.Height = bodyH
         End If
         ' Attachments label + list at bottom
+        Dim pgM As MSForms.Page: Set pgM = m_mpgTabs.Pages(m_mailPageIdx)
         Dim ci As Long
         For ci = 0 To pgM.Controls.Count - 1
             If TypeName(pgM.Controls(ci)) = "Label" Then
                 If pgM.Controls(ci).Caption Like "*Attachment*" Then
-                    pgM.Controls(ci).Top = ph - 78: pgM.Controls(ci).Width = pw
+                    pgM.Controls(ci).Top = ph - attH - 16: pgM.Controls(ci).Width = pw
                 End If
             End If
         Next ci
         If Not m_lstAttach Is Nothing Then
-            m_lstAttach.Width = pw: m_lstAttach.Top = ph - 64: m_lstAttach.Height = 64
+            m_lstAttach.Width = pw: m_lstAttach.Top = ph - attH: m_lstAttach.Height = attH
         End If
     End If
 
@@ -302,10 +315,8 @@ End Sub
 
 Private Sub ResizeFrameEditors(fra As MSForms.Frame, frameW As Single)
     On Error Resume Next
-    Dim labelW As Single: labelW = 80
     Dim sbW As Single: sbW = 18
-    Dim txtLeft As Single: txtLeft = labelW + 4
-    Dim editorW As Single: editorW = frameW - txtLeft - sbW - 4
+    Dim editorW As Single: editorW = frameW - 8 - sbW - 8
     Dim ci As Long
     For ci = 0 To fra.Controls.Count - 1
         Dim ctl As MSForms.Control: Set ctl = fra.Controls(ci)
@@ -324,7 +335,7 @@ Private Function AddLabel(container As Object, nm As String, l As Single, t As S
     Set AddLabel = container.Controls.Add("Forms.Label.1", nm)
     With AddLabel
         .Left = l: .Top = t: .Width = w: .Height = h
-        .Font.Name = "MS UI Gothic": .Font.Size = 9
+        .Font.Name = "Meiryo UI": .Font.Size = 9
     End With
 End Function
 
@@ -332,9 +343,10 @@ Private Function AddTextBox(container As Object, nm As String, l As Single, t As
     Set AddTextBox = container.Controls.Add("Forms.TextBox.1", nm)
     With AddTextBox
         .Left = l: .Top = t: .Width = w: .Height = h
-        .SpecialEffect = fmSpecialEffectSunken
-        .BorderStyle = fmBorderStyleNone
-        .Font.Name = "MS UI Gothic": .Font.Size = 9
+        .SpecialEffect = fmSpecialEffectFlat
+        .BorderStyle = fmBorderStyleSingle
+        .BorderColor = &HD0D0D0
+        .Font.Name = "Meiryo": .Font.Size = 9
     End With
 End Function
 
@@ -342,8 +354,9 @@ Private Function AddListBox(container As Object, nm As String, l As Single, t As
     Set AddListBox = container.Controls.Add("Forms.ListBox.1", nm)
     With AddListBox
         .Left = l: .Top = t: .Width = w: .Height = h
-        .SpecialEffect = fmSpecialEffectSunken
-        .BorderStyle = fmBorderStyleNone
+        .SpecialEffect = fmSpecialEffectFlat
+        .BorderStyle = fmBorderStyleSingle
+        .BorderColor = &HD0D0D0
     End With
 End Function
 
@@ -351,8 +364,8 @@ Private Function AddCombo(container As Object, nm As String, l As Single, t As S
     Set AddCombo = container.Controls.Add("Forms.ComboBox.1", nm)
     With AddCombo
         .Left = l: .Top = t: .Width = w: .Height = h
-        .SpecialEffect = fmSpecialEffectSunken
-        .Font.Name = "MS UI Gothic": .Font.Size = 9
+        .SpecialEffect = fmSpecialEffectFlat
+        .Font.Name = "Meiryo UI": .Font.Size = 9
     End With
 End Function
 
@@ -360,7 +373,7 @@ Private Function AddButton(container As Object, nm As String, l As Single, t As 
     Set AddButton = container.Controls.Add("Forms.CommandButton.1", nm)
     With AddButton
         .Left = l: .Top = t: .Width = w: .Height = h: .Caption = cap
-        .Font.Name = "MS UI Gothic": .Font.Size = 9
+        .Font.Name = "Meiryo UI": .Font.Size = 9
     End With
 End Function
 
@@ -504,12 +517,13 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
     fraScroll.ScrollBars = fmScrollBarsVertical
     fraScroll.KeepScrollBarsVisible = fmScrollBarsNone
     fraScroll.Caption = ""
+    fraScroll.BackColor = &HFFFFFF
 
-    Dim yPos As Single: yPos = 4
+    Dim yPos As Single: yPos = 8
     Dim labelW As Single: labelW = 80
     Dim sbW As Single: sbW = 18
-    Dim txtLeft As Single: txtLeft = labelW + 4
-    Dim editorW As Single: editorW = pw - txtLeft - sbW - 4
+    Dim editorLeft As Single: editorLeft = 8
+    Dim editorW As Single: editorW = pw - editorLeft - sbW - 8
 
     Dim i As Long
     For i = 1 To fields.Count
@@ -517,21 +531,25 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         Dim isMultiline As Boolean: isMultiline = FolioConfig.GetFieldBool(m_currentSource, fn, "multiline")
         Dim isEditable As Boolean: isEditable = FolioConfig.GetFieldBool(m_currentSource, fn, "editable", True)
         If fn = keyCol Then isEditable = False
-        Dim rowH As Single: rowH = IIf(isMultiline, 54, 20)
 
         Dim lbl As MSForms.Label
         Set lbl = fraScroll.Controls.Add("Forms.Label.1", "lbl_" & fn)
-        lbl.Left = 0: lbl.Top = yPos + 2: lbl.Width = labelW: lbl.Height = 14
-        lbl.TextAlign = fmTextAlignRight
+        lbl.Left = editorLeft: lbl.Top = yPos: lbl.Width = labelW: lbl.Height = 14
         lbl.Caption = GetFieldShortName(fn)
         lbl.ControlTipText = fn
+        lbl.Font.Name = "Meiryo UI": lbl.Font.Size = 8
+        lbl.ForeColor = RGB(100, 100, 100)
 
+        Dim rowH As Single: rowH = IIf(isMultiline, 54, 22)
         Dim txt As MSForms.TextBox
         Set txt = fraScroll.Controls.Add("Forms.TextBox.1", "txt_" & fn)
-        txt.Left = txtLeft: txt.Top = yPos: txt.Width = editorW: txt.Height = rowH
-        txt.Font.Name = "MS UI Gothic": txt.Font.Size = m_fontSize
+        txt.Left = editorLeft: txt.Top = yPos + 14: txt.Width = editorW: txt.Height = rowH
+        txt.Font.Name = "Meiryo": txt.Font.Size = m_fontSize
+        txt.SpecialEffect = fmSpecialEffectFlat
+        txt.BorderStyle = fmBorderStyleSingle
+        txt.BorderColor = &HD0D0D0
         txt.Locked = Not isEditable
-        If Not isEditable Then txt.BackColor = &H8000000F
+        If Not isEditable Then txt.BackColor = &HF8F8F8
         If isMultiline Then txt.MultiLine = True: txt.ScrollBars = fmScrollBarsVertical: txt.WordWrap = True
         Dim fType As String: fType = FolioConfig.GetFieldStr(m_currentSource, fn, "type", "text")
         If fType = "number" Then txt.TextAlign = fmTextAlignRight
@@ -541,7 +559,7 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         editor.Init txt, fn, Me, Not isEditable
         m_fieldEditors.Add editor
 
-        yPos = yPos + rowH + 4
+        yPos = yPos + rowH + 20
     Next i
 
     fraScroll.ScrollHeight = yPos + 4
@@ -592,30 +610,60 @@ Private Sub BuildMailPage(pg As MSForms.Page)
     On Error GoTo ErrHandler
     Dim pw As Single: pw = m_mpgTabs.Width - 12
     Dim ph As Single: ph = m_mpgTabs.Height - 30
+    Dim attH As Single: attH = 60
+    Dim hdrH As Single: hdrH = 54
+    Dim mailListH As Single: mailListH = 70
 
+    ' Mail list (top)
     Set m_lstMail = pg.Controls.Add("Forms.ListBox.1", "lstMail")
-    m_lstMail.Left = 0: m_lstMail.Top = 0: m_lstMail.Width = pw: m_lstMail.Height = 80
-    m_lstMail.Font.Name = "MS Gothic": m_lstMail.Font.Size = m_fontSize
+    With m_lstMail
+        .Left = 0: .Top = 0: .Width = pw: .Height = mailListH
+        .Font.Name = "Meiryo": .Font.Size = m_fontSize
+        .SpecialEffect = fmSpecialEffectFlat
+        .BorderStyle = fmBorderStyleSingle: .BorderColor = &HD0D0D0
+    End With
 
-    Set m_lblSubject = AddLabel(pg, "lblSubject", M, 84, pw - M * 2, 14)
-    m_lblSubject.Font.Bold = True
-    Set m_lblFrom = AddLabel(pg, "lblFrom", M, 100, pw - M * 2, 14)
-    Set m_lblDate = AddLabel(pg, "lblDate", M, 116, pw - M * 2, 14)
+    ' Header area (subject, from, date)
+    Dim hdrTop As Single: hdrTop = mailListH + 4
+    Set m_lblSubject = AddLabel(pg, "lblSubject", 8, hdrTop, pw - 16, 18)
+    m_lblSubject.Font.Name = "Meiryo UI": m_lblSubject.Font.Size = 10: m_lblSubject.Font.Bold = True
 
+    Set m_lblFrom = AddLabel(pg, "lblFrom", 8, hdrTop + 20, pw - 16, 14)
+    m_lblFrom.Font.Name = "Meiryo UI": m_lblFrom.Font.Size = 8
+    m_lblFrom.ForeColor = RGB(100, 100, 100)
+
+    Set m_lblDate = AddLabel(pg, "lblDate", 8, hdrTop + 34, pw - 16, 14)
+    m_lblDate.Font.Name = "Meiryo UI": m_lblDate.Font.Size = 8
+    m_lblDate.ForeColor = RGB(100, 100, 100)
+
+    ' Body (center, takes remaining space)
+    Dim bodyTop As Single: bodyTop = hdrTop + hdrH
+    Dim bodyH As Single: bodyH = ph - bodyTop - attH - 20
     Set m_txtMailBody = pg.Controls.Add("Forms.TextBox.1", "txtMailBody")
-    m_txtMailBody.Left = 0: m_txtMailBody.Top = 134: m_txtMailBody.Width = pw
-    m_txtMailBody.Height = ph - 134 - 80
-    m_txtMailBody.MultiLine = True: m_txtMailBody.ScrollBars = fmScrollBarsVertical
-    m_txtMailBody.Locked = True: m_txtMailBody.BackColor = &H8000000F
-    m_txtMailBody.Font.Name = "MS UI Gothic": m_txtMailBody.Font.Size = m_fontSize
+    With m_txtMailBody
+        .Left = 0: .Top = bodyTop: .Width = pw: .Height = bodyH
+        .MultiLine = True: .ScrollBars = fmScrollBarsVertical
+        .Locked = True: .BackColor = &HFFFFFF
+        .Font.Name = "Meiryo": .Font.Size = m_fontSize
+        .SpecialEffect = fmSpecialEffectFlat
+        .BorderStyle = fmBorderStyleSingle: .BorderColor = &HE0E0E0
+    End With
 
+    ' Attachments label
+    Dim attLblTop As Single: attLblTop = ph - attH - 16
     Dim lblAtt As MSForms.Label
-    Set lblAtt = AddLabel(pg, "lblAtt", 0, ph - 78, pw, 14)
-    lblAtt.Caption = "  Attachments:": lblAtt.ForeColor = RGB(105, 105, 105)
+    Set lblAtt = AddLabel(pg, "lblAtt", 4, attLblTop, pw, 14)
+    lblAtt.Caption = "Attachments": lblAtt.ForeColor = RGB(100, 100, 100)
+    lblAtt.Font.Name = "Meiryo UI": lblAtt.Font.Size = 8
 
+    ' Attachment list (bottom)
     Set m_lstAttach = pg.Controls.Add("Forms.ListBox.1", "lstAttach")
-    m_lstAttach.Left = 0: m_lstAttach.Top = ph - 64: m_lstAttach.Width = pw: m_lstAttach.Height = 64
-    m_lstAttach.Font.Name = "MS Gothic": m_lstAttach.Font.Size = m_fontSize
+    With m_lstAttach
+        .Left = 0: .Top = ph - attH: .Width = pw: .Height = attH
+        .Font.Name = "Meiryo": .Font.Size = m_fontSize
+        .SpecialEffect = fmSpecialEffectFlat
+        .BorderStyle = fmBorderStyleSingle: .BorderColor = &HD0D0D0
+    End With
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -627,7 +675,7 @@ Private Sub BuildFilesPage(pg As MSForms.Page)
     Dim ph As Single: ph = m_mpgTabs.Height - 30
     Set m_lstFiles = pg.Controls.Add("Forms.ListBox.1", "lstFiles")
     m_lstFiles.Left = 0: m_lstFiles.Top = 0: m_lstFiles.Width = pw: m_lstFiles.Height = ph
-    m_lstFiles.Font.Name = "MS Gothic": m_lstFiles.Font.Size = m_fontSize
+    m_lstFiles.Font.Name = "Meiryo": m_lstFiles.Font.Size = m_fontSize
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -788,7 +836,7 @@ Private Sub UpdateMailTab()
     For i = 1 To m_matchedMails.Count
         Dim mr As Object: Set mr = m_matchedMails(i)
         Dim line As String
-        line = DictStr(mr, "received_at") & " | " & DictStr(mr, "sender_email") & " | " & DictStr(mr, "subject")
+        line = DictStr(mr, "subject") & "  -  " & DictStr(mr, "sender_email") & "  " & DictStr(mr, "received_at")
         m_lstMail.AddItem line
     Next i
 
@@ -1199,9 +1247,9 @@ Private Sub m_lstMail_Click()
     Dim idx As Long: idx = m_lstMail.ListIndex
     If idx < 0 Or idx >= m_matchedMails.Count Then Exit Sub
     Dim mr As Object: Set mr = m_matchedMails(idx + 1)
-    m_lblSubject.Caption = "Subject: " & DictStr(mr, "subject")
-    m_lblFrom.Caption = "From: " & DictStr(mr, "sender_email")
-    m_lblDate.Caption = "Date: " & DictStr(mr, "received_at")
+    m_lblSubject.Caption = DictStr(mr, "subject")
+    m_lblFrom.Caption = DictStr(mr, "sender_email")
+    m_lblDate.Caption = DictStr(mr, "received_at")
     Dim bp As String: bp = DictStr(mr, "body_path")
     If Len(bp) > 0 And FileExists(bp) Then
         m_txtMailBody.Text = ReadTextFile(bp)

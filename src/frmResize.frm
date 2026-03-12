@@ -37,7 +37,7 @@ End Sub
 Private Sub BuildLayout()
     Me.Width = 240
     Me.Height = 180
-    Me.BackColor = &H8000000F
+    Me.BackColor = &HFFFFFF
     Me.Caption = "Resize"
 
     Dim cw As Single: cw = Me.InsideWidth
@@ -58,7 +58,7 @@ Private Sub BuildLayout()
         Set lbl = Me.Controls.Add("Forms.Label.1", "lblR" & i)
         lbl.Left = 2: lbl.Top = y + 2: lbl.Width = 46: lbl.Height = 12
         lbl.Caption = CStr(lbls(i))
-        lbl.Font.Name = "MS UI Gothic": lbl.Font.Size = 8
+        lbl.Font.Name = "Meiryo UI": lbl.Font.Size = 8
 
         Set sbars(i) = Me.Controls.Add("Forms.ScrollBar.1", "sbar" & i)
         With sbars(i)
