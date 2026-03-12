@@ -50,7 +50,7 @@ Private Const ROW_H As Single = 28
 Private Sub UserForm_Initialize()
     Dim eh As New ErrorHandler: eh.Enter "frmSettings", "UserForm_Initialize"
     On Error GoTo ErrHandler
-    Me.Width = 440: Me.Height = 340
+    Me.Width = 440: Me.Height = 380
     m_suppressEvents = True
     BuildLayout
     LoadConfig

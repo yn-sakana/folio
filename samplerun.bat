@@ -1,6 +1,6 @@
 @echo off
-echo === Build + Run folio ===
-powershell -ExecutionPolicy Bypass -File "%~dp0scripts\Build-Addin.ps1"
+echo === Build + Run folio (sample) ===
+powershell -ExecutionPolicy Bypass -File "%~dp0scripts\Build-Addin.ps1" -Sample
 if errorlevel 1 (
     echo Build failed.
     pause

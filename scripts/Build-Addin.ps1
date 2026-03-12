@@ -12,7 +12,8 @@
 param(
     [ValidateSet('xlsm', 'xlam')]
     [string]$OutputFormat = 'xlsm',
-    [string]$OutputName = ''
+    [string]$OutputName = '',
+    [switch]$Sample
 )
 
 $ErrorActionPreference = 'Stop'
@@ -139,11 +140,14 @@ End Sub
     $cfgSheet.Range("A1").Value2 = "key"
     $cfgSheet.Range("B1").Value2 = "value"
     $cfgSheet.Range("A2").Value2 = "excel_path"
-    $cfgSheet.Range("B2").Value2 = ""
     $cfgSheet.Range("A3").Value2 = "mail_folder"
-    $cfgSheet.Range("B3").Value2 = ""
     $cfgSheet.Range("A4").Value2 = "case_folder_root"
-    $cfgSheet.Range("B4").Value2 = ""
+    if ($Sample) {
+        $sampleXlsx = Join-Path $sampleDir 'folio-sample.xlsx'
+        $cfgSheet.Range("B2").Value2 = $sampleXlsx
+        $cfgSheet.Range("B3").Value2 = $mailDir
+        $cfgSheet.Range("B4").Value2 = $casesDir
+    }
 
     # _folio_sources: one row per source
     $srcSheet = $wb.Worksheets.Add([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))
@@ -154,6 +158,13 @@ End Sub
     $srcSheet.Range("C1").Value2 = "display_name_column"
     $srcSheet.Range("D1").Value2 = "mail_link_column"
     $srcSheet.Range("E1").Value2 = "folder_link_column"
+    if ($Sample) {
+        $srcSheet.Range("A2").Value2 = "anken"
+        $srcSheet.Range("B2").Value2 = "基本_案件ID"
+        $srcSheet.Range("C2").Value2 = "基本_案件名"
+        $srcSheet.Range("D2").Value2 = "申請者_担当者メール"
+        $srcSheet.Range("E2").Value2 = "基本_案件ID"
+    }
 
     # _folio_fields: one row per source+field
     $fldSheet = $wb.Worksheets.Add([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))
