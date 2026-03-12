@@ -389,7 +389,7 @@ Private Function JsonEscape(ByVal value As String) As String
     Dim text As String
     text = value
     text = Replace(text, "\", "\\")
-    text = Replace(text, Chr$(34), "\"")
+    text = Replace(text, Chr$(34), "\" & Chr$(34))
     text = Replace(text, vbCrLf, "\n")
     text = Replace(text, vbCr, "\n")
     text = Replace(text, vbLf, "\n")
