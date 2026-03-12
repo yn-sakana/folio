@@ -25,35 +25,100 @@ Option Explicit
 
 Private Const OLMSGUNICODE As Long = 9
 
-Private Const DEFAULT_EXPORT_ROOT As String = "C:\mail_archive"
-Private Const REG_APP_NAME As String = "FolioMailExport"
-Private Const REG_KEY_EXPORT_ROOT As String = "ExportRoot"
+Private Const CONFIG_FILE_NAME As String = ".foliomail.json"
 
 ' ============================================================================
-' Settings
+' Settings (%APPDATA%\FolioMailExport\.foliomail.json)
 ' ============================================================================
+
+Private Function GetConfigPath() As String
+    GetConfigPath = Environ("APPDATA") & "\FolioMailExport\" & CONFIG_FILE_NAME
+End Function
+
+Private Function LoadConfig() As Object
+    Set LoadConfig = LoadConfigFile(GetConfigPath())
+    If LoadConfig Is Nothing Then Set LoadConfig = CreateObject("Scripting.Dictionary")
+End Function
 
 Private Function GetExportRoot() As String
-    Dim val As String
-    val = GetSetting(REG_APP_NAME, "Settings", REG_KEY_EXPORT_ROOT, "")
-    If Len(val) > 0 Then
-        GetExportRoot = val
-    Else
-        GetExportRoot = DEFAULT_EXPORT_ROOT
+    Dim cfg As Object: Set cfg = LoadConfig()
+    If cfg.Exists("export_root") Then
+        GetExportRoot = CStr(cfg("export_root"))
     End If
 End Function
 
+Private Function LoadConfigFile(ByVal path As String) As Object
+    On Error Resume Next
+    If Dir$(path) = "" Then Exit Function
+    Dim f As Integer: f = FreeFile
+    Dim txt As String, line As String
+    Open path For Input As #f
+    Do Until EOF(f): Line Input #f, line: txt = txt & line: Loop
+    Close #f
+    ' Simple JSON parser: extract "key": "value" pairs
+    Set LoadConfigFile = CreateObject("Scripting.Dictionary")
+    Dim pos As Long: pos = 1
+    Do
+        pos = InStr(pos, txt, """")
+        If pos = 0 Then Exit Do
+        Dim keyStart As Long: keyStart = pos + 1
+        pos = InStr(keyStart, txt, """")
+        If pos = 0 Then Exit Do
+        Dim key As String: key = Mid$(txt, keyStart, pos - keyStart)
+        ' Find colon then value
+        Dim colonPos As Long: colonPos = InStr(pos, txt, ":")
+        If colonPos = 0 Then Exit Do
+        Dim valStart As Long: valStart = InStr(colonPos, txt, """")
+        If valStart = 0 Then Exit Do
+        valStart = valStart + 1
+        Dim valEnd As Long: valEnd = InStr(valStart, txt, """")
+        If valEnd = 0 Then Exit Do
+        Dim val As String: val = Mid$(txt, valStart, valEnd - valStart)
+        val = Replace(val, "\\", "\")
+        val = Replace(val, "\n", vbCrLf)
+        If Not LoadConfigFile.Exists(key) Then LoadConfigFile.Add key, val
+        pos = valEnd + 1
+    Loop
+    On Error GoTo 0
+End Function
+
+Public Sub SaveConfigForUI(ByVal cfg As Object)
+    SaveConfig cfg
+End Sub
+
+Private Sub SaveConfig(ByVal cfg As Object)
+    Dim configDir As String: configDir = Environ("APPDATA") & "\FolioMailExport"
+    Dim path As String: path = configDir & "\" & CONFIG_FILE_NAME
+    EnsureFolder configDir
+    Dim f As Integer: f = FreeFile
+    Open path For Output As #f
+    Print #f, "{"
+    Dim keys As Variant: keys = cfg.keys
+    Dim i As Long
+    For i = 0 To cfg.Count - 1
+        Dim comma As String: If i < cfg.Count - 1 Then comma = "," Else comma = ""
+        Print #f, "  """ & CStr(keys(i)) & """: """ & JsonEscape(CStr(cfg(keys(i)))) & """" & comma
+    Next i
+    Print #f, "}"
+    Close #f
+End Sub
+
 Private Function GetSettingAccount() As String
-    GetSettingAccount = GetSetting(REG_APP_NAME, "Settings", "Account", "")
+    Dim cfg As Object: Set cfg = LoadConfig()
+    If cfg.Exists("account") Then GetSettingAccount = CStr(cfg("account"))
 End Function
 
 Private Function GetSettingFolderPath() As String
-    GetSettingFolderPath = GetSetting(REG_APP_NAME, "Settings", "FolderPath", "")
+    Dim cfg As Object: Set cfg = LoadConfig()
+    If cfg.Exists("folder_path") Then GetSettingFolderPath = CStr(cfg("folder_path"))
 End Function
 
 Private Function GetSettingDays() As Long
-    Dim val As String: val = GetSetting(REG_APP_NAME, "Settings", "StartupDays", "30")
-    If IsNumeric(val) Then GetSettingDays = CLng(val) Else GetSettingDays = 30
+    Dim cfg As Object: Set cfg = LoadConfig()
+    GetSettingDays = 30
+    If cfg.Exists("startup_days") Then
+        If IsNumeric(cfg("startup_days")) Then GetSettingDays = CLng(cfg("startup_days"))
+    End If
 End Function
 
 Public Sub FolioMail_Setup()
@@ -70,7 +135,6 @@ Public Function RunExport(ByVal exportRoot As String, ByVal days As Long, _
     RunExport = ExportFiltered(exportRoot, days, filterAccount, filterFolder)
 End Function
 
-' Called from ThisOutlookSession.Application_Startup
 ' Called from ThisOutlookSession.Application_Startup
 Public Sub FolioMail_OnStartup()
     Dim exportRoot As String: exportRoot = GetExportRoot()
@@ -384,8 +448,7 @@ Private Function SafeName(ByVal value As String) As String
     result = ""
     For i = 1 To Len(text)
         c = AscW(Mid$(text, i, 1))
-        ' Keep: ASCII printable (32-126) except forbidden, and CJK/Japanese (>= 256)
-        ' Drop: control chars, surrogates (55296-57343), and NTFS-forbidden chars
+        If c < 0 Then c = c + 65536
         If c >= 55296 And c <= 57343 Then
             ' Surrogate pair (emoji etc.) — skip
         ElseIf c < 32 Then

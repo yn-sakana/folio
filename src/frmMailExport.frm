@@ -30,8 +30,7 @@ Private Const M As Long = 12
 Private Const LBL_W As Single = 100
 Private Const ROW_H As Single = 28
 
-Private Const REG_APP As String = "FolioMailExport"
-Private Const REG_SECTION As String = "Settings"
+Private Const CONFIG_FILE As String = ".foliomail.json"
 
 ' ============================================================================
 ' Initialize
@@ -216,20 +215,26 @@ End Function
 ' ============================================================================
 
 Private Sub LoadSettings()
-    m_txtExportPath.Text = GetSetting(REG_APP, REG_SECTION, "ExportRoot", "C:\mail_archive")
-    m_txtDays.Text = GetSetting(REG_APP, REG_SECTION, "StartupDays", "30")
+    Dim cfgPath As String: cfgPath = Environ("APPDATA") & "\FolioMailExport\" & CONFIG_FILE
+    Dim cfg As Object: Set cfg = LoadConfigFile(cfgPath)
 
-    Dim savedAcct As String: savedAcct = GetSetting(REG_APP, REG_SECTION, "Account", "")
-    SelectComboItem m_cmbAccount, savedAcct
+    If cfg Is Nothing Then
+        m_txtExportPath.Text = ""
+        m_txtDays.Text = "30"
+        LoadFolders
+        Exit Sub
+    End If
+
+    m_txtExportPath.Text = DictVal(cfg, "export_root", "")
+    m_txtDays.Text = DictVal(cfg, "startup_days", "30")
+    SelectComboItem m_cmbAccount, DictVal(cfg, "account", "")
     LoadFolders
-
-    Dim savedFolder As String: savedFolder = GetSetting(REG_APP, REG_SECTION, "FolderPath", "")
+    Dim savedFolder As String: savedFolder = DictVal(cfg, "folder_path", "")
     If Len(savedFolder) > 0 Then
         Dim i As Long
         For i = 1 To m_folderPaths.Count
             If m_folderPaths(i) = savedFolder Then
-                m_cmbFolder.ListIndex = i - 1
-                Exit For
+                m_cmbFolder.ListIndex = i - 1: Exit For
             End If
         Next i
     End If
@@ -242,22 +247,58 @@ Private Function SaveSettings() As Boolean
         Exit Function
     End If
 
-    SaveSetting REG_APP, REG_SECTION, "ExportRoot", m_txtExportPath.Text
-    SaveSetting REG_APP, REG_SECTION, "StartupDays", m_txtDays.Text
-
+    Dim cfg As Object: Set cfg = CreateObject("Scripting.Dictionary")
+    cfg.Add "export_root", m_txtExportPath.Text
+    cfg.Add "startup_days", m_txtDays.Text
     If m_cmbAccount.ListIndex > 0 Then
-        SaveSetting REG_APP, REG_SECTION, "Account", m_cmbAccount.Text
-    Else
-        SaveSetting REG_APP, REG_SECTION, "Account", ""
+        cfg.Add "account", m_cmbAccount.Text
     End If
-
     If m_cmbFolder.ListIndex > 0 Then
-        SaveSetting REG_APP, REG_SECTION, "FolderPath", m_folderPaths(m_cmbFolder.ListIndex + 1)
-    Else
-        SaveSetting REG_APP, REG_SECTION, "FolderPath", ""
+        cfg.Add "folder_path", m_folderPaths(m_cmbFolder.ListIndex + 1)
     End If
 
+    FolioMailExport.SaveConfigForUI cfg
     SaveSettings = True
+End Function
+
+Private Function LoadConfigFile(ByVal path As String) As Object
+    On Error Resume Next
+    If Dir$(path) = "" Then Exit Function
+    Dim f As Integer: f = FreeFile
+    Dim txt As String, line As String
+    Open path For Input As #f
+    Do Until EOF(f): Line Input #f, line: txt = txt & line: Loop
+    Close #f
+    Set LoadConfigFile = CreateObject("Scripting.Dictionary")
+    Dim pos As Long: pos = 1
+    Do
+        pos = InStr(pos, txt, """")
+        If pos = 0 Then Exit Do
+        Dim keyStart As Long: keyStart = pos + 1
+        pos = InStr(keyStart, txt, """")
+        If pos = 0 Then Exit Do
+        Dim key As String: key = Mid$(txt, keyStart, pos - keyStart)
+        Dim colonPos As Long: colonPos = InStr(pos, txt, ":")
+        If colonPos = 0 Then Exit Do
+        Dim valStart As Long: valStart = InStr(colonPos, txt, """")
+        If valStart = 0 Then Exit Do
+        valStart = valStart + 1
+        Dim valEnd As Long: valEnd = InStr(valStart, txt, """")
+        If valEnd = 0 Then Exit Do
+        Dim val As String: val = Mid$(txt, valStart, valEnd - valStart)
+        val = Replace(val, "\\", "\")
+        val = Replace(val, "\n", vbCrLf)
+        If Not LoadConfigFile.Exists(key) Then
+            LoadConfigFile.Add key, val
+        End If
+        pos = valEnd + 1
+    Loop
+    On Error GoTo 0
+End Function
+
+Private Function DictVal(ByVal d As Object, ByVal key As String, ByVal def As String) As String
+    If d Is Nothing Then DictVal = def: Exit Function
+    If d.Exists(key) Then DictVal = CStr(d(key)) Else DictVal = def
 End Function
 
 Private Sub SelectComboItem(cmb As MSForms.ComboBox, val As String)

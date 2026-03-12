@@ -46,8 +46,10 @@ Private m_filteredRows As Collection
 Private m_currentRecIdx As Long
 Private m_fieldEditors As Collection
 Private m_allMailRecords As Collection
+Private m_mailEntryIds As Object   ' Dictionary of known entry_id
 Private m_matchedMails As Collection
 Private m_folderRecords As Collection
+Private m_caseIds As Object        ' Dictionary of known case folder names
 Private m_watcher As SheetWatcher
 Private m_fileTreeItems As Collection
 Private m_undoStack As Collection
@@ -80,8 +82,10 @@ Private Sub UserForm_Initialize()
     Set m_filteredRows = New Collection
     Set m_fieldEditors = New Collection
     Set m_allMailRecords = New Collection
+    Set m_mailEntryIds = CreateObject("Scripting.Dictionary")
     Set m_matchedMails = New Collection
     Set m_folderRecords = New Collection
+    Set m_caseIds = CreateObject("Scripting.Dictionary")
     Set m_fileTreeItems = New Collection
     Set m_undoStack = New Collection
     m_currentRecIdx = -1
@@ -1152,23 +1156,54 @@ End Sub
 
 Private Sub RefreshJoinedData()
     On Error Resume Next
-    Dim prevMailCount As Long: prevMailCount = m_allMailRecords.Count
-    Dim prevFolderCount As Long: prevFolderCount = m_folderRecords.Count
 
     Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
     If Len(mailFolder) > 0 Then Set m_allMailRecords = FolioData.ReadMailArchive(mailFolder)
     Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
     If Len(caseRoot) > 0 Then Set m_folderRecords = FolioData.ReadCaseFolders(caseRoot)
 
-    ' Log changes in mail/folder counts
-    If m_allMailRecords.Count <> prevMailCount Then
-        FolioChangeLog.AddLogEntry m_currentSource, "", "mail_archive", CStr(prevMailCount), CStr(m_allMailRecords.Count), "scan"
-        AddLogLine m_currentSource, "", "mail_archive", CStr(prevMailCount), CStr(m_allMailRecords.Count), "scan"
-    End If
-    If m_folderRecords.Count <> prevFolderCount Then
-        FolioChangeLog.AddLogEntry m_currentSource, "", "case_files", CStr(prevFolderCount), CStr(m_folderRecords.Count), "scan"
-        AddLogLine m_currentSource, "", "case_files", CStr(prevFolderCount), CStr(m_folderRecords.Count), "scan"
-    End If
+    Dim i As Long
+
+    ' --- Mail: new / delete ---
+    Dim currentMailIds As Object: Set currentMailIds = CreateObject("Scripting.Dictionary")
+    For i = 1 To m_allMailRecords.Count
+        Dim mRec As Object: Set mRec = m_allMailRecords(i)
+        Dim eid As String: eid = FolioHelpers.DictStr(mRec, "entry_id")
+        If Len(eid) > 0 Then
+            Dim mailLabel As String: mailLabel = FolioHelpers.DictStr(mRec, "subject") & " - " & FolioHelpers.DictStr(mRec, "sender_email")
+            currentMailIds.Add eid, mailLabel
+            If Not m_mailEntryIds.Exists(eid) Then
+                AddLogLine m_currentSource, "", "mail", "", mailLabel, "add"
+            End If
+        End If
+    Next i
+    Dim mKeys As Variant: mKeys = m_mailEntryIds.keys
+    For i = 0 To m_mailEntryIds.Count - 1
+        If Not currentMailIds.Exists(mKeys(i)) Then
+            AddLogLine m_currentSource, "", "mail", "", CStr(m_mailEntryIds(mKeys(i))), "delete"
+        End If
+    Next i
+    Set m_mailEntryIds = currentMailIds
+
+    ' --- Files: add / delete (case folder level) ---
+    Dim currentCaseIds As Object: Set currentCaseIds = CreateObject("Scripting.Dictionary")
+    For i = 1 To m_folderRecords.Count
+        Dim fRec As Object: Set fRec = m_folderRecords(i)
+        Dim cid As String: cid = FolioHelpers.DictStr(fRec, "case_id")
+        If Len(cid) > 0 And Not currentCaseIds.Exists(cid) Then
+            currentCaseIds.Add cid, True
+            If Not m_caseIds.Exists(cid) Then
+                AddLogLine m_currentSource, cid, "file", "", "", "add"
+            End If
+        End If
+    Next i
+    Dim fKeys As Variant: fKeys = m_caseIds.keys
+    For i = 0 To m_caseIds.Count - 1
+        If Not currentCaseIds.Exists(fKeys(i)) Then
+            AddLogLine m_currentSource, CStr(fKeys(i)), "file", "", "", "delete"
+        End If
+    Next i
+    Set m_caseIds = currentCaseIds
 
     If m_currentRecIdx > 0 Then
         UpdateMailTab
