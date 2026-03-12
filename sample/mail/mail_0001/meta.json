@@ -1,5 +1,4 @@
 {
-  "mail_id": "MAIL-0001",
   "entry_id": "00000001",
   "mailbox_address": "shinsa@example.org",
   "folder_path": "受信トレイ/交付金申請",
@@ -8,7 +7,7 @@
   "sender_email": "yamada@hokuriku-shinko.or.jp",
   "subject": "【交付金申請】地域活性化事業について",
   "body_path": "body.txt",
-  "msg_path": "",
+  "msg_path": "mail.msg",
   "attachments": [
     { "path": "application.pdf" },
     { "path": "budget.xlsx" }

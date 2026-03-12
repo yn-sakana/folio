@@ -1,5 +1,4 @@
 {
-  "mail_id": "MAIL-0003",
   "entry_id": "00000003",
   "mailbox_address": "shinsa@example.org",
   "folder_path": "受信トレイ/交付金申請",
@@ -8,7 +7,7 @@
   "sender_email": "takahashi@kankyo-suishin.or.jp",
   "subject": "R6年度交付金申請について",
   "body_path": "body.txt",
-  "msg_path": "",
+  "msg_path": "mail.msg",
   "attachments": [
     { "path": "application.pdf" }
   ]

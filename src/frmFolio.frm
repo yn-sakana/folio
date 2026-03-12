@@ -830,7 +830,9 @@ Private Sub UpdateMailTab()
     If Not IsNull(linkVar) And Not IsEmpty(linkVar) Then linkVal = CStr(linkVar)
     If Len(linkVal) = 0 Then Exit Sub
 
-    Set m_matchedMails = FolioData.FindJoinedRecords(m_allMailRecords, "sender_email", linkVal, "exact")
+    Dim mailMatchField As String: mailMatchField = FolioConfig.GetSourceStr(m_currentSource, "mail_match_field")
+    If Len(mailMatchField) = 0 Then mailMatchField = "sender_email"
+    Set m_matchedMails = FolioData.FindJoinedRecords(m_allMailRecords, mailMatchField, linkVal, "exact")
 
     Dim i As Long
     For i = 1 To m_matchedMails.Count

@@ -1,5 +1,4 @@
 {
-  "mail_id": "MAIL-0005",
   "entry_id": "00000005",
   "mailbox_address": "shinsa@example.org",
   "folder_path": "受信トレイ/交付金申請",
@@ -8,7 +7,7 @@
   "sender_email": "watanabe@digital-edu.net",
   "subject": "交付金申請のお願い（デジタル教育推進ネットワーク）",
   "body_path": "body.txt",
-  "msg_path": "",
+  "msg_path": "mail.msg",
   "attachments": [
     { "path": "application.pdf" },
     { "path": "organization_profile.pdf" }
