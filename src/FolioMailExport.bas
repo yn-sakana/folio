@@ -248,8 +248,7 @@ Private Function GetSenderAddress(ByVal mail As Outlook.MailItem) As String
 End Function
 
 Private Function BuildMailFolderName(ByVal mail As Outlook.MailItem) As String
-    BuildMailFolderName = Format$(mail.ReceivedTime, "yyyymmdd_hhnnss") & "_" & _
-        SafeName(GetSenderAddress(mail)) & "_" & SafeName(mail.Subject) & "_" & Left$(SafeName(mail.EntryID), 40)
+    BuildMailFolderName = Format$(mail.ReceivedTime, "yyyymmdd_hhnnss") & "_" & SafeName(mail.Subject)
 End Function
 
 Private Function NormalizeFolderPath(ByVal folderPath As String) As String
