@@ -3,9 +3,9 @@ Option Explicit
 
 ' ============================================================================
 ' Setup:
-'   1. Import this module into Outlook VBA (Alt+F11 > File > Import)
-'   2. Run FolioMail_Setup (Alt+F8) to set the export folder path.
-'      (Or edit DEFAULT_EXPORT_ROOT below as a fallback.)
+'   1. Import FolioMailExport.bas and frmMailExport.frm into Outlook VBA
+'   2. Run FolioMail_Setup (Alt+F8) to configure export settings
+'      (export folder, account, folder scope, startup range)
 '   3. Paste the following into ThisOutlookSession:
 '
 '      Private Sub Application_Startup()
@@ -17,6 +17,10 @@ Option Explicit
 '      End Sub
 '
 '   4. Restart Outlook. Auto-export is now active.
+'
+' Public entry points:
+'   FolioMail_Setup  - Open settings dialog
+'   FolioMail_Run    - Manual full export (no day limit)
 ' ============================================================================
 
 Private Const OLMSGUNICODE As Long = 9
@@ -39,34 +43,42 @@ Private Function GetExportRoot() As String
     End If
 End Function
 
-Public Sub FolioMail_Setup()
-    Dim current As String: current = GetExportRoot()
-    Dim newPath As String
-    newPath = InputBox("Export folder path:" & vbCrLf & vbCrLf & _
-        "Current: " & current, "FolioMailExport Setup", current)
-    If Len(newPath) = 0 Then Exit Sub
-    SaveSetting REG_APP_NAME, "Settings", REG_KEY_EXPORT_ROOT, newPath
-    MsgBox "Export path saved:" & vbCrLf & newPath, vbInformation, "FolioMailExport"
-End Sub
+Private Function GetSettingAccount() As String
+    GetSettingAccount = GetSetting(REG_APP_NAME, "Settings", "Account", "")
+End Function
 
-' ============================================================================
-' Launcher (Alt+F8) - manual full scan
-' ============================================================================
+Private Function GetSettingFolderPath() As String
+    GetSettingFolderPath = GetSetting(REG_APP_NAME, "Settings", "FolderPath", "")
+End Function
+
+Private Function GetSettingDays() As Long
+    Dim val As String: val = GetSetting(REG_APP_NAME, "Settings", "StartupDays", "30")
+    If IsNumeric(val) Then GetSettingDays = CLng(val) Else GetSettingDays = 30
+End Function
+
+Public Sub FolioMail_Setup()
+    frmMailExport.ShowAs "setup"
+End Sub
 
 Public Sub FolioMail_Run()
-    Dim exportRoot As String: exportRoot = GetExportRoot()
-    Dim count As Long
-    count = FolioMail_Export(exportRoot, exportRoot & "\.exported.json")
-    MsgBox "Exported " & count & " new mail(s)." & vbCrLf & vbCrLf & _
-        "Output: " & exportRoot, vbInformation, "FolioMailExport"
+    frmMailExport.ShowAs "export"
 End Sub
 
+' Called from frmMailExport Export button (uses form values, not registry)
+Public Function RunExport(ByVal exportRoot As String, ByVal days As Long, _
+        Optional ByVal filterAccount As String = "", Optional ByVal filterFolder As String = "") As Long
+    RunExport = ExportFiltered(exportRoot, days, filterAccount, filterFolder)
+End Function
+
+' Called from ThisOutlookSession.Application_Startup
 ' Called from ThisOutlookSession.Application_Startup
 Public Sub FolioMail_OnStartup()
     Dim exportRoot As String: exportRoot = GetExportRoot()
-    Debug.Print "[FolioMail] Startup scan: " & exportRoot
+    If Len(exportRoot) = 0 Then Exit Sub
+    Dim days As Long: days = GetSettingDays()
+    Debug.Print "[FolioMail] Startup scan (" & days & " days): " & exportRoot
     Dim count As Long
-    count = FolioMail_Export(exportRoot, exportRoot & "\.exported.json")
+    count = ExportFiltered(exportRoot, days, GetSettingAccount(), GetSettingFolderPath())
     Debug.Print "[FolioMail] Startup scan done: " & count & " new mail(s)"
 End Sub
 
@@ -74,15 +86,13 @@ End Sub
 Public Sub FolioMail_OnNewMail(ByVal entryIdList As String)
     On Error Resume Next
     Dim exportRoot As String: exportRoot = GetExportRoot()
-    Dim stateFile As String: stateFile = exportRoot & "\.exported.json"
-    Dim exported As Object: Set exported = LoadExportedIds(stateFile)
+    If Len(exportRoot) = 0 Then Exit Sub
     Dim ids() As String: ids = Split(entryIdList, ",")
     Dim i As Long
 
     For i = 0 To UBound(ids)
         Dim entryId As String: entryId = Trim$(ids(i))
         If Len(entryId) = 0 Then GoTo NextId
-        If exported.Exists(entryId) Then GoTo NextId
 
         Dim item As Object
         Set item = Application.Session.GetItemFromID(entryId)
@@ -90,63 +100,108 @@ Public Sub FolioMail_OnNewMail(ByVal entryIdList As String)
         If Not TypeOf item Is Outlook.MailItem Then GoTo NextId
 
         Dim mail As Outlook.MailItem: Set mail = item
+        If Not MatchesFilter(mail) Then GoTo NextId
+
         Dim accountSmtp As String: accountSmtp = GetStoreSmtpAddress(mail.Parent.Store)
         Dim folderRoot As String
         folderRoot = exportRoot & "\" & SafeName(accountSmtp) & NormalizeFolderPath(mail.Parent.FolderPath)
-        EnsureFolder folderRoot
 
+        Dim mailFolder As String
+        mailFolder = folderRoot & "\" & BuildMailFolderName(mail)
+        If FileExists(mailFolder & "\meta.json") Then GoTo NextId
+
+        EnsureFolder folderRoot
         ExportMailItem mail, folderRoot, accountSmtp
-        exported.Add entryId, ""
         Debug.Print "[FolioMail] New: " & mail.Subject
 NextId:
     Next i
-
-    SaveExportedIds stateFile, exported
 End Sub
+
+' Shared filter: account + folder scope from settings
+Private Function MatchesFilter(ByVal mail As Outlook.MailItem) As Boolean
+    Dim filterAccount As String: filterAccount = GetSettingAccount()
+    If Len(filterAccount) > 0 Then
+        Dim accountSmtp As String: accountSmtp = GetStoreSmtpAddress(mail.Parent.Store)
+        If LCase$(accountSmtp) <> LCase$(filterAccount) Then Exit Function
+    End If
+
+    Dim filterFolder As String: filterFolder = GetSettingFolderPath()
+    If Len(filterFolder) > 0 Then
+        If Left$(mail.Parent.FolderPath, Len(filterFolder)) <> filterFolder Then Exit Function
+    End If
+
+    MatchesFilter = True
+End Function
 
 ' ============================================================================
 ' Export
 ' ============================================================================
 
-Public Function FolioMail_Export(ByVal exportRoot As String, ByVal stateFilePath As String) As Long
+' Core export with explicit filters
+Private Function ExportFiltered(ByVal exportRoot As String, ByVal days As Long, _
+        ByVal filterAccount As String, ByVal filterFolder As String) As Long
     On Error GoTo ErrHandler
 
-    Dim exported As Object
     Dim store As Outlook.Store
     Dim accountSmtp As String
-    Dim exportedCount As Long
+    Dim total As Long
+    Dim filter As String
 
-    If Len(exportRoot) = 0 Then
-        Err.Raise vbObjectError + 513, , "exportRoot is empty"
+    If Len(exportRoot) = 0 Then Exit Function
+    EnsureFolder exportRoot
+
+    If days > 0 Then
+        filter = "[ReceivedTime]>='" & Format$(DateAdd("d", -days, Now), "yyyy/mm/dd") & "'"
     End If
 
-    EnsureFolder exportRoot
-    Set exported = LoadExportedIds(stateFilePath)
-
-    exportedCount = 0
     For Each store In Application.Session.Stores
         accountSmtp = GetStoreSmtpAddress(store)
-        If Len(accountSmtp) > 0 Then
-            exportedCount = exportedCount + ExportFolderTree(store.GetRootFolder, exportRoot, accountSmtp, exported)
+        If Len(accountSmtp) = 0 Then GoTo NextStore
+
+        If Len(filterAccount) > 0 Then
+            If LCase$(accountSmtp) <> LCase$(filterAccount) Then GoTo NextStore
         End If
+
+        If Len(filterFolder) > 0 Then
+            Dim startFolder As Outlook.Folder
+            Set startFolder = FindFolderByPath(store.GetRootFolder, filterFolder)
+            If Not startFolder Is Nothing Then
+                total = total + ExportFolderTree(startFolder, exportRoot, accountSmtp, filter)
+            End If
+        Else
+            total = total + ExportFolderTree(store.GetRootFolder, exportRoot, accountSmtp, filter)
+        End If
+NextStore:
     Next store
 
-    SaveExportedIds stateFilePath, exported
-
-    FolioMail_Export = exportedCount
+    ExportFiltered = total
     Exit Function
 
 ErrHandler:
-    MsgBox "Folio mail export failed: " & Err.Description, vbExclamation
-    FolioMail_Export = 0
+    Debug.Print "[FolioMail] ExportFiltered error: " & Err.Description
+    ExportFiltered = total
 End Function
 
-Private Function ExportFolderTree(ByVal targetFolder As Outlook.Folder, ByVal exportRoot As String, ByVal accountSmtp As String, ByVal exported As Object) As Long
+Private Function FindFolderByPath(ByVal root As Outlook.Folder, ByVal targetPath As String) As Outlook.Folder
+    On Error Resume Next
+    If root.FolderPath = targetPath Then
+        Set FindFolderByPath = root
+        Exit Function
+    End If
+    Dim child As Outlook.Folder
+    For Each child In root.Folders
+        Set FindFolderByPath = FindFolderByPath(child, targetPath)
+        If Not FindFolderByPath Is Nothing Then Exit Function
+    Next child
+    On Error GoTo 0
+End Function
+
+Private Function ExportFolderTree(ByVal targetFolder As Outlook.Folder, ByVal exportRoot As String, _
+        ByVal accountSmtp As String, ByVal filter As String) As Long
     On Error GoTo FolderError
 
     Dim folderRoot As String
     Dim items As Outlook.Items
-    Dim itemIndex As Long
     Dim currentItem As Object
     Dim mail As Outlook.MailItem
     Dim child As Outlook.Folder
@@ -154,28 +209,36 @@ Private Function ExportFolderTree(ByVal targetFolder As Outlook.Folder, ByVal ex
 
     folderRoot = exportRoot & "\" & SafeName(accountSmtp) & NormalizeFolderPath(targetFolder.FolderPath)
     EnsureFolder folderRoot
-    Debug.Print "[FolioMail] Scanning: " & targetFolder.FolderPath & " (" & targetFolder.Items.Count & " items)"
 
     Set items = targetFolder.Items
-    On Error Resume Next
-    items.Sort "[ReceivedTime]", True
-    On Error GoTo FolderError
+    If Len(filter) > 0 Then Set items = items.Restrict(filter)
+    Debug.Print "[FolioMail] Scanning: " & targetFolder.FolderPath & " (" & items.Count & ")"
 
-    For itemIndex = 1 To items.Count
-        Set currentItem = items(itemIndex)
+    Set currentItem = items.GetFirst
+    Do While Not currentItem Is Nothing
+        On Error Resume Next
         If TypeOf currentItem Is Outlook.MailItem Then
             Set mail = currentItem
-            If Not exported.Exists(mail.EntryID) Then
+            Dim mailFolder As String
+            mailFolder = folderRoot & "\" & BuildMailFolderName(mail)
+            If Not FileExists(mailFolder & "\meta.json") Then
                 ExportMailItem mail, folderRoot, accountSmtp
-                exported.Add mail.EntryID, ""
-                total = total + 1
-                Debug.Print "[FolioMail]   Exported: " & mail.Subject
+                If Err.Number = 0 Then
+                    total = total + 1
+                    Debug.Print "[FolioMail]   Exported: " & mail.Subject
+                Else
+                    Debug.Print "[FolioMail]   ERROR: " & mail.Subject & " - " & Err.Description
+                    Err.Clear
+                End If
             End If
         End If
-    Next itemIndex
+        DoEvents
+        Set currentItem = items.GetNext
+        On Error GoTo FolderError
+    Loop
 
     For Each child In targetFolder.Folders
-        total = total + ExportFolderTree(child, exportRoot, accountSmtp, exported)
+        total = total + ExportFolderTree(child, exportRoot, accountSmtp, filter)
     Next child
 
     ExportFolderTree = total
@@ -206,6 +269,8 @@ Private Sub ExportMailItem(ByVal mail As Outlook.MailItem, ByVal folderRoot As S
     Exit Sub
 
 MailError:
+    Debug.Print "[FolioMail]   MailError: " & Err.Description & " | " & mailRoot
+    Err.Raise Err.Number, , Err.Description  ' propagate to caller
 End Sub
 
 Private Function SaveAttachments(ByVal mail As Outlook.MailItem, ByVal mailRoot As String) As Collection
@@ -244,71 +309,6 @@ Private Sub WriteMetaFile(ByVal path As String, ByVal mail As Outlook.MailItem, 
         "}"
 
     WriteTextFile path, body
-End Sub
-
-' --- State file (exported EntryIDs) ---
-
-Private Function LoadExportedIds(ByVal path As String) As Object
-    Dim dict As Object
-    Dim lineText As String
-    Dim fileNumber As Integer
-    Dim allText As String
-    Dim entryId As String
-    Dim pos As Long, startPos As Long
-
-    Set dict = CreateObject("Scripting.Dictionary")
-
-    If Dir$(path) = "" Then
-        Set LoadExportedIds = dict
-        Exit Function
-    End If
-
-    fileNumber = FreeFile
-    Open path For Input As #fileNumber
-    allText = ""
-    Do Until EOF(fileNumber)
-        Line Input #fileNumber, lineText
-        allText = allText & lineText
-    Loop
-    Close #fileNumber
-
-    ' Parse JSON array of strings: ["id1","id2",...]
-    pos = 1
-    Do
-        pos = InStr(pos, allText, """")
-        If pos = 0 Then Exit Do
-        startPos = pos + 1
-        pos = InStr(startPos, allText, """")
-        If pos = 0 Then Exit Do
-        entryId = Mid$(allText, startPos, pos - startPos)
-        If Len(entryId) > 0 And Not dict.Exists(entryId) Then
-            dict.Add entryId, ""
-        End If
-        pos = pos + 1
-    Loop
-
-    Set LoadExportedIds = dict
-End Function
-
-Private Sub SaveExportedIds(ByVal path As String, ByVal dict As Object)
-    Dim fileNumber As Integer
-    Dim key As Variant
-    Dim first As Boolean
-
-    EnsureFolder CreateObject("Scripting.FileSystemObject").GetParentFolderName(path)
-
-    fileNumber = FreeFile
-    Open path For Output As #fileNumber
-    Print #fileNumber, "["
-    first = True
-    For Each key In dict.Keys
-        If Not first Then Print #fileNumber, ","
-        Print #fileNumber, "  """ & JsonEscape(CStr(key)) & """";
-        first = False
-    Next key
-    Print #fileNumber, ""
-    Print #fileNumber, "]"
-    Close #fileNumber
 End Sub
 
 ' --- Helpers ---
@@ -354,35 +354,56 @@ Private Function BuildMailFolderName(ByVal mail As Outlook.MailItem) As String
 End Function
 
 Private Function NormalizeFolderPath(ByVal folderPath As String) As String
+    ' FolderPath is like "\\account@email.com\Inbox\Sub" — skip first two parts (empty + account)
     Dim parts() As String
     Dim i As Long
     Dim result As String
 
     parts = Split(folderPath, "\")
     result = ""
+    Dim skip As Long: skip = 0
     For i = LBound(parts) To UBound(parts)
-        If Len(parts(i)) > 0 Then
-            result = result & "\" & SafeName(parts(i))
-        End If
+        If Len(parts(i)) = 0 Then GoTo NextPart  ' skip empty parts from leading \\
+        skip = skip + 1
+        If skip <= 1 Then GoTo NextPart  ' skip account name (first non-empty part)
+        result = result & "\" & SafeName(parts(i))
+NextPart:
     Next i
     NormalizeFolderPath = result
 End Function
 
 Private Function SafeName(ByVal value As String) As String
     Dim text As String
+    Dim result As String
+    Dim i As Long
+    Dim c As Long
+
     text = Trim$(value)
     If Len(text) = 0 Then text = "blank"
-    text = Replace(text, "\", "_")
-    text = Replace(text, "/", "_")
-    text = Replace(text, ":", "_")
-    text = Replace(text, "*", "_")
-    text = Replace(text, "?", "_")
-    text = Replace(text, Chr$(34), "_")
-    text = Replace(text, "<", "_")
-    text = Replace(text, ">", "_")
-    text = Replace(text, "|", "_")
-    If Len(text) > 80 Then text = Left$(text, 80)
-    SafeName = text
+
+    result = ""
+    For i = 1 To Len(text)
+        c = AscW(Mid$(text, i, 1))
+        ' Keep: ASCII printable (32-126) except forbidden, and CJK/Japanese (>= 256)
+        ' Drop: control chars, surrogates (55296-57343), and NTFS-forbidden chars
+        If c >= 55296 And c <= 57343 Then
+            ' Surrogate pair (emoji etc.) — skip
+        ElseIf c < 32 Then
+            ' Control character — skip
+        Else
+            Dim ch As String: ch = Mid$(text, i, 1)
+            Select Case ch
+                Case "\", "/", ":", "*", "?", Chr$(34), "<", ">", "|"
+                    result = result & "_"
+                Case Else
+                    result = result & ch
+            End Select
+        End If
+    Next i
+
+    If Len(result) = 0 Then result = "blank"
+    If Len(result) > 80 Then result = Left$(result, 80)
+    SafeName = result
 End Function
 
 Private Function JsonEscape(ByVal value As String) As String
