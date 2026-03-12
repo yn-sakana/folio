@@ -138,12 +138,12 @@ End Sub
     $cfgSheet.Visible = 2  # xlSheetVeryHidden
     $cfgSheet.Range("A1").Value2 = "key"
     $cfgSheet.Range("B1").Value2 = "value"
-    $cfgSheet.Range("A2").Value2 = "mail_folder"
-    $cfgSheet.Range("B2").Value2 = $mailDir
-    $cfgSheet.Range("A3").Value2 = "case_folder_root"
-    $cfgSheet.Range("B3").Value2 = $casesDir
-    $cfgSheet.Range("A4").Value2 = "poll_interval"
-    $cfgSheet.Range("B4").Value2 = "5"
+    $cfgSheet.Range("A2").Value2 = "excel_path"
+    $cfgSheet.Range("B2").Value2 = ""
+    $cfgSheet.Range("A3").Value2 = "mail_folder"
+    $cfgSheet.Range("B3").Value2 = ""
+    $cfgSheet.Range("A4").Value2 = "case_folder_root"
+    $cfgSheet.Range("B4").Value2 = ""
 
     # _folio_sources: one row per source
     $srcSheet = $wb.Worksheets.Add([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))

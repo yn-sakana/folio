@@ -4,7 +4,8 @@ Option Explicit
 ' ============================================================================
 ' Setup:
 '   1. Import this module into Outlook VBA (Alt+F11 > File > Import)
-'   2. Edit EXPORT_ROOT below to your export folder path.
+'   2. Run FolioMail_Setup (Alt+F8) to set the export folder path.
+'      (Or edit DEFAULT_EXPORT_ROOT below as a fallback.)
 '   3. Paste the following into ThisOutlookSession:
 '
 '      Private Sub Application_Startup()
@@ -20,32 +21,60 @@ Option Explicit
 
 Private Const OLMSGUNICODE As Long = 9
 
-' >>> Edit this path <<<
-Private Const EXPORT_ROOT As String = "C:\mail_archive"
+Private Const DEFAULT_EXPORT_ROOT As String = "C:\mail_archive"
+Private Const REG_APP_NAME As String = "FolioMailExport"
+Private Const REG_KEY_EXPORT_ROOT As String = "ExportRoot"
+
+' ============================================================================
+' Settings
+' ============================================================================
+
+Private Function GetExportRoot() As String
+    Dim val As String
+    val = GetSetting(REG_APP_NAME, "Settings", REG_KEY_EXPORT_ROOT, "")
+    If Len(val) > 0 Then
+        GetExportRoot = val
+    Else
+        GetExportRoot = DEFAULT_EXPORT_ROOT
+    End If
+End Function
+
+Public Sub FolioMail_Setup()
+    Dim current As String: current = GetExportRoot()
+    Dim newPath As String
+    newPath = InputBox("Export folder path:" & vbCrLf & vbCrLf & _
+        "Current: " & current, "FolioMailExport Setup", current)
+    If Len(newPath) = 0 Then Exit Sub
+    SaveSetting REG_APP_NAME, "Settings", REG_KEY_EXPORT_ROOT, newPath
+    MsgBox "Export path saved:" & vbCrLf & newPath, vbInformation, "FolioMailExport"
+End Sub
 
 ' ============================================================================
 ' Launcher (Alt+F8) - manual full scan
 ' ============================================================================
 
 Public Sub FolioMail_Run()
+    Dim exportRoot As String: exportRoot = GetExportRoot()
     Dim count As Long
-    count = FolioMail_Export(EXPORT_ROOT, EXPORT_ROOT & "\.exported.json")
+    count = FolioMail_Export(exportRoot, exportRoot & "\.exported.json")
     MsgBox "Exported " & count & " new mail(s)." & vbCrLf & vbCrLf & _
-        "Output: " & EXPORT_ROOT, vbInformation, "FolioMailExport"
+        "Output: " & exportRoot, vbInformation, "FolioMailExport"
 End Sub
 
 ' Called from ThisOutlookSession.Application_Startup
 Public Sub FolioMail_OnStartup()
-    Debug.Print "[FolioMail] Startup scan: " & EXPORT_ROOT
+    Dim exportRoot As String: exportRoot = GetExportRoot()
+    Debug.Print "[FolioMail] Startup scan: " & exportRoot
     Dim count As Long
-    count = FolioMail_Export(EXPORT_ROOT, EXPORT_ROOT & "\.exported.json")
+    count = FolioMail_Export(exportRoot, exportRoot & "\.exported.json")
     Debug.Print "[FolioMail] Startup scan done: " & count & " new mail(s)"
 End Sub
 
 ' Called from ThisOutlookSession.Application_NewMailEx
 Public Sub FolioMail_OnNewMail(ByVal entryIdList As String)
     On Error Resume Next
-    Dim stateFile As String: stateFile = EXPORT_ROOT & "\.exported.json"
+    Dim exportRoot As String: exportRoot = GetExportRoot()
+    Dim stateFile As String: stateFile = exportRoot & "\.exported.json"
     Dim exported As Object: Set exported = LoadExportedIds(stateFile)
     Dim ids() As String: ids = Split(entryIdList, ",")
     Dim i As Long
@@ -63,7 +92,7 @@ Public Sub FolioMail_OnNewMail(ByVal entryIdList As String)
         Dim mail As Outlook.MailItem: Set mail = item
         Dim accountSmtp As String: accountSmtp = GetStoreSmtpAddress(mail.Parent.Store)
         Dim folderRoot As String
-        folderRoot = EXPORT_ROOT & "\" & SafeName(accountSmtp) & NormalizeFolderPath(mail.Parent.FolderPath)
+        folderRoot = exportRoot & "\" & SafeName(accountSmtp) & NormalizeFolderPath(mail.Parent.FolderPath)
         EnsureFolder folderRoot
 
         ExportMailItem mail, folderRoot, accountSmtp

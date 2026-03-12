@@ -103,14 +103,22 @@ Public Function FormatLogLine(entry As Object) As String
     On Error Resume Next
     If IsDate(ts) Then ts = Format$(CDate(ts), "hh:nn:ss")
     On Error GoTo ErrHandler
-    Dim change As String
+
+    Dim origin As String: origin = FolioHelpers.DictStr(entry, "origin")
+    Dim key As String: key = FolioHelpers.DictStr(entry, "key")
+    Dim nm As String: nm = FolioHelpers.DictStr(entry, "name")
+    Dim field As String: field = FolioHelpers.DictStr(entry, "field")
     Dim oldV As String: oldV = FolioHelpers.DictStr(entry, "old")
     Dim newV As String: newV = FolioHelpers.DictStr(entry, "new")
-    If Len(oldV) > 0 Or Len(newV) > 0 Then change = oldV & " -> " & newV
-    FormatLogLine = ts & " | " & FolioHelpers.DictStr(entry, "src") & " | " & _
-                    FolioHelpers.DictStr(entry, "key") & " | " & _
-                    FolioHelpers.DictStr(entry, "field") & " | " & _
-                    change & " | " & FolioHelpers.DictStr(entry, "origin")
+
+    Dim change As String
+    If Len(field) > 0 Then change = field & ": "
+    If Len(oldV) > 0 Or Len(newV) > 0 Then change = change & oldV & " -> " & newV
+
+    Dim id As String: id = key
+    If Len(nm) > 0 And nm <> key Then id = id & " " & nm
+
+    FormatLogLine = ts & "  " & origin & "  " & id & "  " & change
     eh.OK: Exit Function
 ErrHandler: eh.Catch
 End Function

@@ -51,9 +51,7 @@ End Sub
 
 Public Sub StartPolling()
     If Not g_pollActive Then Exit Sub
-    Dim pollSec As Long: pollSec = FolioConfig.GetLng("poll_interval", 5)
-    If pollSec < 1 Then pollSec = 5
-    g_nextPollAt = Now + TimeSerial(0, 0, pollSec)
+    g_nextPollAt = Now + TimeSerial(0, 0, 5)
     g_pollScheduled = True
     Application.OnTime g_nextPollAt, "FolioMain.PollCallback"
 End Sub

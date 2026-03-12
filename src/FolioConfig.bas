@@ -229,7 +229,6 @@ End Function
 ' ============================================================================
 
 Public Sub InitFieldSettingsFromTable(src As String, tbl As ListObject)
-    Dim newCount As Long: newCount = 0
     Dim existing As Collection: Set existing = GetFieldNames(src)
     Dim existDict As Object: Set existDict = CreateObject("Scripting.Dictionary")
     Dim item As Variant
@@ -244,39 +243,9 @@ Public Sub InitFieldSettingsFromTable(src As String, tbl As ListObject)
             EnsureField src, col.Name
             SetFieldStr src, col.Name, "type", GuessFieldType(col)
             SetFieldBool src, col.Name, "multiline", GuessMultiline(col)
-            newCount = newCount + 1
         End If
 NextCol:
     Next col
-
-    If Len(GetSourceStr(src, "key_column")) = 0 Then AutoDetectKeyColumn src, tbl
-    If Len(GetSourceStr(src, "display_name_column")) = 0 Then AutoDetectDisplayNameColumn src, tbl
-    If Len(GetSourceStr(src, "mail_link_column")) = 0 Then AutoDetectMailColumn src, tbl
-    If Len(GetSourceStr(src, "folder_link_column")) = 0 Then
-        Dim kc As String: kc = GetSourceStr(src, "key_column")
-        If Len(kc) > 0 Then SetSourceStr src, "folder_link_column", kc
-    End If
-
-    If newCount > 0 Then AutoSelectInListFields src
-End Sub
-
-Private Sub AutoSelectInListFields(src As String)
-    Dim names As Collection: Set names = GetFieldNames(src)
-    Dim n As Variant
-    For Each n In names
-        If GetFieldBool(src, CStr(n), "in_list") Then Exit Sub
-    Next n
-    ' No in_list fields — default key + first 3
-    Dim keyCol As String: keyCol = GetSourceStr(src, "key_column")
-    If Len(keyCol) > 0 Then SetFieldBool src, keyCol, "in_list", True
-    Dim cnt As Long: cnt = 1
-    For Each n In names
-        If cnt >= 4 Then Exit For
-        If CStr(n) = keyCol Then GoTo NextAuto
-        SetFieldBool src, CStr(n), "in_list", True
-        cnt = cnt + 1
-NextAuto:
-    Next n
 End Sub
 
 Private Function GuessFieldType(col As ListColumn) As String
@@ -284,6 +253,13 @@ Private Function GuessFieldType(col As ListColumn) As String
     On Error Resume Next
     If col.DataBodyRange Is Nothing Then Exit Function
     If col.DataBodyRange.Rows.Count = 0 Then Exit Function
+
+    ' Check NumberFormat first
+    Dim fmt As String: fmt = CStr(col.DataBodyRange.Cells(1, 1).NumberFormat)
+    If fmt Like "*yy*" Or fmt Like "*mm*dd*" Then GuessFieldType = "date": Exit Function
+    If fmt Like "#*" Or fmt Like "0*" Or fmt Like "*%*" Then GuessFieldType = "number": Exit Function
+
+    ' Fallback: check values
     Dim r As Long
     For r = 1 To Application.Min(10, col.DataBodyRange.Rows.Count)
         Dim v As Variant: v = col.DataBodyRange.Cells(r, 1).Value
@@ -306,7 +282,7 @@ Private Function GuessMultiline(col As ListColumn) As Boolean
         Dim v As Variant: v = col.DataBodyRange.Cells(r, 1).Value
         If Not IsEmpty(v) And Not IsNull(v) Then
             Dim s As String: s = CStr(v)
-            If InStr(s, vbLf) > 0 Or InStr(s, vbCr) > 0 Or Len(s) > 100 Then
+            If InStr(s, vbLf) > 0 Or InStr(s, vbCr) > 0 Or Len(s) > 30 Then
                 GuessMultiline = True: Exit Function
             End If
         End If
@@ -314,70 +290,3 @@ Private Function GuessMultiline(col As ListColumn) As Boolean
     On Error GoTo 0
 End Function
 
-Private Sub AutoDetectKeyColumn(src As String, tbl As ListObject)
-    On Error Resume Next
-    If tbl.DataBodyRange Is Nothing Then Exit Sub
-    Dim rowCount As Long: rowCount = tbl.DataBodyRange.Rows.Count
-    If rowCount = 0 Then Exit Sub
-    Dim col As ListColumn
-    For Each col In tbl.ListColumns
-        If col.Name Like "_*" Then GoTo NextKeyCol
-        Dim vals As Object: Set vals = CreateObject("Scripting.Dictionary")
-        Dim allUnique As Boolean: allUnique = True
-        Dim hasEmpty As Boolean: hasEmpty = False
-        Dim r As Long, checkRows As Long: checkRows = Application.Min(50, rowCount)
-        For r = 1 To checkRows
-            Dim v As Variant: v = col.DataBodyRange.Cells(r, 1).Value
-            If IsEmpty(v) Or IsNull(v) Or Len(Trim$(CStr(v))) = 0 Then hasEmpty = True: Exit For
-            Dim sv As String: sv = CStr(v)
-            If vals.Exists(sv) Then allUnique = False: Exit For
-            vals.Add sv, True
-        Next r
-        If allUnique And Not hasEmpty And vals.Count > 0 Then
-            SetSourceStr src, "key_column", col.Name: Exit Sub
-        End If
-NextKeyCol:
-    Next col
-    On Error GoTo 0
-End Sub
-
-Private Sub AutoDetectDisplayNameColumn(src As String, tbl As ListObject)
-    On Error Resume Next
-    If tbl.DataBodyRange Is Nothing Then Exit Sub
-    Dim keyColName As String: keyColName = GetSourceStr(src, "key_column")
-    Dim pastKey As Boolean: pastKey = (Len(keyColName) = 0)
-    Dim col As ListColumn
-    For Each col In tbl.ListColumns
-        If col.Name Like "_*" Then GoTo NextDispCol
-        If Not pastKey Then
-            If col.Name = keyColName Then pastKey = True
-            GoTo NextDispCol
-        End If
-        If GuessFieldType(col) = "text" Then
-            SetSourceStr src, "display_name_column", col.Name: Exit Sub
-        End If
-NextDispCol:
-    Next col
-    On Error GoTo 0
-End Sub
-
-Private Sub AutoDetectMailColumn(src As String, tbl As ListObject)
-    On Error Resume Next
-    If tbl.DataBodyRange Is Nothing Then Exit Sub
-    Dim col As ListColumn
-    For Each col In tbl.ListColumns
-        If col.Name Like "_*" Then GoTo NextMailCol
-        Dim r As Long
-        For r = 1 To Application.Min(10, col.DataBodyRange.Rows.Count)
-            Dim v As Variant: v = col.DataBodyRange.Cells(r, 1).Value
-            If Not IsEmpty(v) And Not IsNull(v) Then
-                If InStr(CStr(v), "@") > 0 Then
-                    SetSourceStr src, "mail_link_column", col.Name: Exit Sub
-                End If
-                GoTo NextMailCol
-            End If
-        Next r
-NextMailCol:
-    Next col
-    On Error GoTo 0
-End Sub

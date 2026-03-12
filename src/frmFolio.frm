@@ -385,34 +385,37 @@ Private Sub LoadSources()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "LoadSources"
     On Error GoTo ErrHandler
     m_cmbSource.Clear
-    Dim wb As Workbook
-    For Each wb In Application.Workbooks
-        If wb.Name <> ThisWorkbook.Name Then
-            Dim names As Collection: Set names = FolioData.GetWorkbookTableNames(wb)
-            Dim n As Variant
-            For Each n In names
-                m_cmbSource.AddItem CStr(n)
-            Next n
-        End If
-    Next wb
+    Dim wb As Workbook: Set wb = GetDataWorkbook()
+    If Not wb Is Nothing Then
+        Dim names As Collection: Set names = FolioData.GetWorkbookTableNames(wb)
+        Dim n As Variant
+        For Each n In names
+            m_cmbSource.AddItem CStr(n)
+        Next n
+    End If
     If m_cmbSource.ListCount > 0 Then m_cmbSource.ListIndex = 0
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
 
 Private Function GetDataWorkbook() As Workbook
+    Dim excelPath As String: excelPath = FolioConfig.GetStr("excel_path")
+    If Len(excelPath) = 0 Then Exit Function
+    If Dir$(excelPath) = "" Then Exit Function
+
+    ' Check if already open
+    Dim fileName As String: fileName = Dir$(excelPath)
     Dim wb As Workbook
     For Each wb In Application.Workbooks
-        If wb.Name = ThisWorkbook.Name Then GoTo NextWb
-        If wb.IsAddin Then GoTo NextWb
-        Dim ws As Worksheet
-        For Each ws In wb.Worksheets
-            If ws.ListObjects.Count > 0 Then
-                Set GetDataWorkbook = wb: Exit Function
-            End If
-        Next ws
-NextWb:
+        If LCase$(wb.Name) = LCase$(fileName) Then
+            Set GetDataWorkbook = wb: Exit Function
+        End If
     Next wb
+
+    ' Open it
+    On Error Resume Next
+    Set GetDataWorkbook = Application.Workbooks.Open(excelPath, ReadOnly:=False, UpdateLinks:=0)
+    On Error GoTo 0
 End Function
 
 Private Sub SwitchSource(sourceName As String)
@@ -540,10 +543,13 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         lbl.Font.Name = "Meiryo UI": lbl.Font.Size = 8
         lbl.ForeColor = RGB(100, 100, 100)
 
+        Dim fType As String: fType = FolioConfig.GetFieldStr(m_currentSource, fn, "type", "text")
+        Dim isNumber As Boolean: isNumber = (fType = "number")
+        Dim txtW As Single: txtW = IIf(isNumber, 120, editorW)
         Dim rowH As Single: rowH = IIf(isMultiline, 54, 22)
         Dim txt As MSForms.TextBox
         Set txt = fraScroll.Controls.Add("Forms.TextBox.1", "txt_" & fn)
-        txt.Left = editorLeft: txt.Top = yPos + 14: txt.Width = editorW: txt.Height = rowH
+        txt.Left = editorLeft: txt.Top = yPos + 14: txt.Width = txtW: txt.Height = rowH
         txt.Font.Name = "Meiryo": txt.Font.Size = m_fontSize
         txt.SpecialEffect = fmSpecialEffectFlat
         txt.BorderStyle = fmBorderStyleSingle
@@ -551,12 +557,11 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         txt.Locked = Not isEditable
         If Not isEditable Then txt.BackColor = &HF8F8F8
         If isMultiline Then txt.MultiLine = True: txt.ScrollBars = fmScrollBarsVertical: txt.WordWrap = True
-        Dim fType As String: fType = FolioConfig.GetFieldStr(m_currentSource, fn, "type", "text")
-        If fType = "number" Then txt.TextAlign = fmTextAlignRight
+        If isNumber Then txt.TextAlign = fmTextAlignRight
 
         Dim editor As FieldEditor
         Set editor = New FieldEditor
-        editor.Init txt, fn, Me, Not isEditable
+        editor.Init txt, fn, Me, Not isEditable, fType
         m_fieldEditors.Add editor
 
         yPos = yPos + rowH + 20
@@ -707,21 +712,11 @@ Private Sub UpdateRecordList()
     Dim rowCount As Long: rowCount = TableRowCount()
     If rowCount = 0 Then Exit Sub
 
-    Dim allFields As Collection: Set allFields = FolioConfig.GetFieldNames(m_currentSource)
-
     Dim dispCols As New Collection
-    Dim k As Long
-    For k = 1 To allFields.Count
-        If FolioConfig.GetFieldBool(m_currentSource, CStr(allFields(k)), "in_list") Then dispCols.Add CStr(allFields(k))
-    Next k
-    If dispCols.Count = 0 Then
-        Dim col As ListColumn
-        Dim dc As Long: dc = 0
-        For Each col In m_currentTable.ListColumns
-            If dc >= 4 Then Exit For
-            If Not col.Name Like "_*" Then dispCols.Add col.Name: dc = dc + 1
-        Next col
-    End If
+    Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
+    Dim nameCol As String: nameCol = FolioConfig.GetSourceStr(m_currentSource, "display_name_column")
+    If Len(keyCol) > 0 Then dispCols.Add keyCol
+    If Len(nameCol) > 0 And nameCol <> keyCol Then dispCols.Add nameCol
 
     Dim filterText As String: filterText = Trim$(m_txtFilter.Text)
     Dim r As Long
@@ -1073,10 +1068,19 @@ End Sub
 Private Sub AddLogLine(src As String, key As String, field As String, oldVal As String, newVal As String, origin As String)
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "AddLogLine"
     On Error GoTo ErrHandler
+    Dim recName As String
+    If m_currentRecIdx > 0 Then
+        Dim nameCol As String: nameCol = FolioConfig.GetSourceStr(m_currentSource, "display_name_column")
+        If Len(nameCol) > 0 Then
+            Dim nv As Variant: nv = TableCellValue(m_currentRecIdx, nameCol)
+            If Not IsNull(nv) And Not IsEmpty(nv) Then recName = CStr(nv)
+        End If
+    End If
     Dim entry As Object: Set entry = NewDict()
     entry.Add "ts", Format$(Now, "yyyy-mm-dd hh:nn:ss")
     entry.Add "src", src
     entry.Add "key", key
+    entry.Add "name", recName
     entry.Add "field", field
     entry.Add "old", oldVal
     entry.Add "new", newVal
