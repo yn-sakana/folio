@@ -1338,13 +1338,21 @@ End Sub
 Private Sub RefreshJoinedData()
     On Error Resume Next
 
-    ' Only rescan files/mail during poll cycle (not on every record switch)
-    ' m_allMailRecords and m_folderRecords are loaded once in SwitchSource
-    ' and refreshed here every 5s poll
+    ' ReadMailArchive / ReadCaseFolders use a 30-second cache internally,
+    ' so calling them every 5-second poll is cheap when cache hits.
     Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
+    Dim prevMailRef As Collection: Set prevMailRef = m_allMailRecords
     If Len(mailFolder) > 0 Then Set m_allMailRecords = FolioData.ReadMailArchive(mailFolder)
     Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
+    Dim prevCaseRef As Collection: Set prevCaseRef = m_folderRecords
     If Len(caseRoot) > 0 Then Set m_folderRecords = FolioData.ReadCaseFolders(caseRoot)
+
+    ' If both collections are the same object (cache hit), skip diff detection
+    If m_allMailRecords Is prevMailRef And m_folderRecords Is prevCaseRef Then
+        ' Still update the current tab display for the selected record
+        If m_currentRecIdx > 0 Then UpdateMailTab: UpdateFilesTab
+        Exit Sub
+    End If
 
     Dim i As Long
 

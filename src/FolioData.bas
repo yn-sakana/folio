@@ -2,6 +2,28 @@ Attribute VB_Name = "FolioData"
 Option Explicit
 
 ' ============================================================================
+' Cache for ReadMailArchive / ReadCaseFolders
+' Avoids expensive disk I/O + JSON parsing on every 5-second poll.
+' Pure time-based: re-scan every 15 seconds (3 poll cycles).
+' ============================================================================
+Private m_mailCache As Collection
+Private m_mailCachePath As String
+Private m_mailCacheTime As Date
+
+Private m_caseCache As Collection
+Private m_caseCachePath As String
+Private m_caseCacheTime As Date
+
+Private Const CACHE_TTL_SECONDS As Long = 15
+
+Public Sub ClearCache()
+    Set m_mailCache = Nothing
+    Set m_caseCache = Nothing
+    m_mailCachePath = ""
+    m_caseCachePath = ""
+End Sub
+
+' ============================================================================
 ' Table Operations
 ' ============================================================================
 
@@ -86,10 +108,27 @@ End Function
 Public Function ReadMailArchive(folderPath As String) As Collection
     Dim eh As New ErrorHandler: eh.Enter "FolioData", "ReadMailArchive"
     On Error GoTo ErrHandler
+    If Not FolioHelpers.FolderExists(folderPath) Then
+        Set ReadMailArchive = New Collection: eh.OK: Exit Function
+    End If
+
+    ' Return cache if within TTL
+    If Not m_mailCache Is Nothing Then
+        If m_mailCachePath = folderPath Then
+            If DateDiff("s", m_mailCacheTime, Now) < CACHE_TTL_SECONDS Then
+                Set ReadMailArchive = m_mailCache: eh.OK: Exit Function
+            End If
+        End If
+    End If
+
     Set ReadMailArchive = New Collection
-    If Not FolioHelpers.FolderExists(folderPath) Then eh.OK: Exit Function
     Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
     ScanMailFolder fso.GetFolder(folderPath), ReadMailArchive, fso
+
+    ' Update cache
+    Set m_mailCache = ReadMailArchive
+    m_mailCachePath = folderPath
+    m_mailCacheTime = Now
     eh.OK: Exit Function
 ErrHandler: eh.Catch
 End Function
@@ -160,13 +199,30 @@ End Sub
 Public Function ReadCaseFolders(rootPath As String) As Collection
     Dim eh As New ErrorHandler: eh.Enter "FolioData", "ReadCaseFolders"
     On Error GoTo ErrHandler
+    If Not FolioHelpers.FolderExists(rootPath) Then
+        Set ReadCaseFolders = New Collection: eh.OK: Exit Function
+    End If
+
+    ' Return cache if within TTL
+    If Not m_caseCache Is Nothing Then
+        If m_caseCachePath = rootPath Then
+            If DateDiff("s", m_caseCacheTime, Now) < CACHE_TTL_SECONDS Then
+                Set ReadCaseFolders = m_caseCache: eh.OK: Exit Function
+            End If
+        End If
+    End If
+
     Set ReadCaseFolders = New Collection
-    If Not FolioHelpers.FolderExists(rootPath) Then eh.OK: Exit Function
     Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
     Dim caseFolder As Object
     For Each caseFolder In fso.GetFolder(rootPath).SubFolders
         ScanCaseFolder caseFolder, caseFolder.Name, caseFolder.path, ReadCaseFolders, fso
     Next caseFolder
+
+    ' Update cache
+    Set m_caseCache = ReadCaseFolders
+    m_caseCachePath = rootPath
+    m_caseCacheTime = Now
     eh.OK: Exit Function
 ErrHandler: eh.Catch
 End Function
