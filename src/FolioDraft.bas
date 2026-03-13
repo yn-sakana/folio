@@ -252,14 +252,38 @@ Private Function CSVEscape(val As String) As String
 End Function
 
 Private Function ReadCSVLines(path As String) As Collection
+    ' Parse CSV respecting quoted fields that may contain line breaks
     Set ReadCSVLines = New Collection
     Dim content As String: content = FolioHelpers.ReadTextFile(path)
     If Len(content) = 0 Then Exit Function
-    Dim parts() As String: parts = Split(content, vbCrLf)
-    Dim i As Long
-    For i = 0 To UBound(parts)
-        If Len(Trim$(parts(i))) > 0 Then ReadCSVLines.Add parts(i)
-    Next i
+
+    Dim pos As Long: pos = 1
+    Dim inQuote As Boolean: inQuote = False
+    Dim lineStart As Long: lineStart = 1
+    Dim ch As String
+
+    Do While pos <= Len(content)
+        ch = Mid$(content, pos, 1)
+        If ch = """" Then
+            inQuote = Not inQuote
+        ElseIf Not inQuote Then
+            If ch = vbCr Or ch = vbLf Then
+                Dim line As String: line = Mid$(content, lineStart, pos - lineStart)
+                If Len(Trim$(line)) > 0 Then ReadCSVLines.Add line
+                ' Skip CR+LF pair
+                If ch = vbCr And pos < Len(content) Then
+                    If Mid$(content, pos + 1, 1) = vbLf Then pos = pos + 1
+                End If
+                lineStart = pos + 1
+            End If
+        End If
+        pos = pos + 1
+    Loop
+    ' Last line (no trailing newline)
+    If lineStart <= Len(content) Then
+        Dim lastLine As String: lastLine = Mid$(content, lineStart)
+        If Len(Trim$(lastLine)) > 0 Then ReadCSVLines.Add lastLine
+    End If
 End Function
 
 Private Function ParseCSVLine(line As String) As String()

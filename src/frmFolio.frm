@@ -533,6 +533,23 @@ Private Sub SwitchSource(sourceName As String)
     m_loading = False
     UpdateRecordList
     LoadChangeLog
+
+    ' Prime join-state dictionaries before enabling log detection
+    ' so the first poll doesn't treat all existing items as "new"
+    Dim mi As Long
+    For mi = 1 To m_allMailRecords.Count
+        Dim mRec As Object: Set mRec = m_allMailRecords(mi)
+        Dim eid As String: eid = FolioHelpers.DictStr(mRec, "entry_id")
+        If Len(eid) > 0 And Not m_mailEntryIds.Exists(eid) Then
+            m_mailEntryIds.Add eid, FolioHelpers.DictStr(mRec, "subject") & " - " & FolioHelpers.DictStr(mRec, "sender_email")
+        End If
+    Next mi
+    Dim fi As Long
+    For fi = 1 To m_folderRecords.Count
+        Dim fRec As Object: Set fRec = m_folderRecords(fi)
+        Dim cid As String: cid = FolioHelpers.DictStr(fRec, "case_id")
+        If Len(cid) > 0 And Not m_caseIds.Exists(cid) Then m_caseIds.Add cid, True
+    Next fi
     m_initialLoadDone = True
     eh.OK: Exit Sub
 ErrHandler: eh.Catch

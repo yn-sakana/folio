@@ -185,10 +185,9 @@ Private Sub LoadAccounts()
         If Not knownStoreIds.Exists(store.StoreID) Then
             Dim storeAddr As String
             storeAddr = LCase$(store.GetRootFolder.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x39FE001E"))
+            If Len(storeAddr) = 0 Then storeAddr = LCase$(store.DisplayName)
             If Len(storeAddr) > 0 Then
-                m_cmbAccount.AddItem storeAddr & " (shared)"
-            ElseIf Len(store.DisplayName) > 0 Then
-                m_cmbAccount.AddItem store.DisplayName & " (shared)"
+                m_cmbAccount.AddItem storeAddr
             End If
         End If
         On Error GoTo 0

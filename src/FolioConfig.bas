@@ -28,6 +28,21 @@ Private Sub EnsureSheet(shName As String, headers As Variant)
         For i = 0 To UBound(headers)
             ws.Cells(1, i + 1).Value = headers(i)
         Next i
+    Else
+        ' Migrate: add missing columns to existing sheets
+        Dim lastCol As Long: lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+        Dim j As Long
+        For j = 0 To UBound(headers)
+            Dim found As Boolean: found = False
+            Dim k As Long
+            For k = 1 To lastCol
+                If CStr(ws.Cells(1, k).Value) = CStr(headers(j)) Then found = True: Exit For
+            Next k
+            If Not found Then
+                lastCol = lastCol + 1
+                ws.Cells(1, lastCol).Value = headers(j)
+            End If
+        Next j
     End If
 End Sub
 
