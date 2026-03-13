@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1536",
+  "entry_id": "00001536",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-23T08:07:00+09:00",
+  "sender_name": "村上 陽一",
+  "sender_email": "w313@digital-edu.net",
+  "subject": "交付金申請書類の送付（R06-751）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

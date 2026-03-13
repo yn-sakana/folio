@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0756",
+  "entry_id": "00000756",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-08T12:35:00+09:00",
+  "sender_name": "上田 翔太",
+  "sender_email": "y247@kankyo-suishin.or.jp",
+  "subject": "申請書類の提出（R06-364）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

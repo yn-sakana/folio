@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0857",
+  "entry_id": "00000857",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-08T14:17:00+09:00",
+  "sender_name": "村上 幸子",
+  "sender_email": "b901@machizukuri.or.jp",
+  "subject": "申請内容の変更について（R06-416）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0830",
+  "entry_id": "00000830",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-08-08T16:24:00+09:00",
+  "sender_name": "近藤 恵子",
+  "sender_email": "h219@green-energy-tohoku.co.jp",
+  "subject": "申請内容の変更について（R06-403）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

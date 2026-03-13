@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0925",
+  "entry_id": "00000925",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-04-23T16:00:00+09:00",
+  "sender_name": "長谷川 花子",
+  "sender_email": "n897@kodomo-mirai.org",
+  "subject": "申請書類の提出（R06-448）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

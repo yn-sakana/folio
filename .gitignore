@@ -5,3 +5,6 @@
 Thumbs.db
 .python/
 .venv/
+.folio_cache/
+.claude/
+.mcp.json

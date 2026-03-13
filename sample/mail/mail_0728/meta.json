@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0728",
+  "entry_id": "00000728",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-07-02T16:00:00+09:00",
+  "sender_name": "高橋 真由美",
+  "sender_email": "p789@kodomo-mirai.org",
+  "subject": "申請書類の提出（R06-349）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

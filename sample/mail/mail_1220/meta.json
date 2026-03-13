@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1220",
+  "entry_id": "00001220",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-08T16:27:00+09:00",
+  "sender_name": "森 浩二",
+  "sender_email": "m644@kanko-suishin.jp",
+  "subject": "書類修正のお知らせ（R06-599）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

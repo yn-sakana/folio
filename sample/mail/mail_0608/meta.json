@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0608",
+  "entry_id": "00000608",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-09-28T11:19:00+09:00",
+  "sender_name": "石井 恵子",
+  "sender_email": "r605@kankyo-suishin.or.jp",
+  "subject": "交付金申請書類の送付（R06-293）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

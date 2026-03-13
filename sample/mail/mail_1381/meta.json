@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1381",
+  "entry_id": "00001381",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-08-10T15:53:00+09:00",
+  "sender_name": "藤田 真由美",
+  "sender_email": "o205@kenkou-center.or.jp",
+  "subject": "不足書類の送付（R06-679）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

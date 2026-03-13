@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1228",
+  "entry_id": "00001228",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-04-07T11:04:00+09:00",
+  "sender_name": "林 雅子",
+  "sender_email": "y816@kodomo-mirai.org",
+  "subject": "申請書類の提出（R06-604）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

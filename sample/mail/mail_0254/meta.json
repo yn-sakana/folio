@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0254",
+  "entry_id": "00000254",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-13T16:08:00+09:00",
+  "sender_name": "佐藤 明日香",
+  "sender_email": "x276@sports-kitakanto.or.jp",
+  "subject": "交付金申請について（R06-121）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

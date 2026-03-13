@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0905",
+  "entry_id": "00000905",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-19T12:35:00+09:00",
+  "sender_name": "西村 浩二",
+  "sender_email": "w126@dentou-bunka.or.jp",
+  "subject": "書類修正のお知らせ（R06-439）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

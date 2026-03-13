@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1969",
+  "entry_id": "00001969",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-04-10T12:11:00+09:00",
+  "sender_name": "前田 正樹",
+  "sender_email": "s721@sports-kitakanto.or.jp",
+  "subject": "交付金申請について（R06-973）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

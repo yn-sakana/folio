@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1711",
+  "entry_id": "00001711",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-09-19T11:30:00+09:00",
+  "sender_name": "石井 明日香",
+  "sender_email": "p838@kodomo-mirai.org",
+  "subject": "申請書類の提出（R06-843）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

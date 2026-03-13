@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0418",
+  "entry_id": "00000418",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-12T16:25:00+09:00",
+  "sender_name": "佐藤 浩二",
+  "sender_email": "r960@digital-edu.net",
+  "subject": "交付金申請について（R06-203）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

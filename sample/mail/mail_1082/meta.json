@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1082",
+  "entry_id": "00001082",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-07-12T14:44:00+09:00",
+  "sender_name": "前田 裕子",
+  "sender_email": "q826@bousai-net.or.jp",
+  "subject": "書類修正のお知らせ（R06-523）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

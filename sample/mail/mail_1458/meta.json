@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1458",
+  "entry_id": "00001458",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-08-07T17:53:00+09:00",
+  "sender_name": "上田 大輔",
+  "sender_email": "o798@kodomo-mirai.org",
+  "subject": "不足書類の送付（R06-715）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

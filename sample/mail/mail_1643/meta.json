@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1643",
+  "entry_id": "00001643",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-08-03T15:36:00+09:00",
+  "sender_name": "石井 陽一",
+  "sender_email": "e500@kankyo-suishin.or.jp",
+  "subject": "書類修正のお知らせ（R06-808）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

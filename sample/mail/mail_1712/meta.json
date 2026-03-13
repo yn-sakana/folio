@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1712",
+  "entry_id": "00001712",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-20T09:51:00+09:00",
+  "sender_name": "伊藤 健",
+  "sender_email": "e846@sports-kitakanto.or.jp",
+  "subject": "書類修正のお知らせ（R06-844）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

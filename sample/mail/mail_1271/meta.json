@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1271",
+  "entry_id": "00001271",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-06T13:55:00+09:00",
+  "sender_name": "橋本 拓也",
+  "sender_email": "p992@fukushi-net.or.jp",
+  "subject": "申請内容の変更について（R06-625）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

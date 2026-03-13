@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1812",
+  "entry_id": "00001812",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-05T15:50:00+09:00",
+  "sender_name": "村上 裕子",
+  "sender_email": "x773@digital-edu.net",
+  "subject": "申請内容の変更について（R06-900）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

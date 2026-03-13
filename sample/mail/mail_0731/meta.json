@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0731",
+  "entry_id": "00000731",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-08-30T15:06:00+09:00",
+  "sender_name": "中村 陽一",
+  "sender_email": "g808@machizukuri.or.jp",
+  "subject": "交付金申請について（R06-352）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

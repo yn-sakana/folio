@@ -1,6 +1,9 @@
 Attribute VB_Name = "FolioHelpers"
 Option Explicit
 
+Private m_readStm As Object  ' Reusable ADODB.Stream for ReadTextFile
+Private m_writeStm As Object ' Reusable ADODB.Stream for WriteTextFile
+
 ' ============================================================================
 ' JSON Parser
 ' ============================================================================
@@ -245,28 +248,41 @@ End Sub
 
 Public Function ReadTextFile(path As String) As String
     On Error GoTo ErrOut
-    Dim stm As Object: Set stm = CreateObject("ADODB.Stream")
-    stm.Type = 2: stm.Charset = "UTF-8"
-    stm.Open
-    stm.LoadFromFile path
-    ReadTextFile = stm.ReadText
-    stm.Close
+    ReadTextFile = ""
+    If Len(Dir$(path)) = 0 Then Exit Function
+
+    ' Read raw bytes with shared access (avoids file lock)
+    Dim f As Long: f = FreeFile
+    Open path For Binary Access Read Shared As #f
+    Dim size As Long: size = LOF(f)
+    If size = 0 Then Close #f: Exit Function
+    Dim buf() As Byte: ReDim buf(0 To size - 1)
+    Get #f, , buf
+    Close #f
+
+    ' Convert UTF-8 bytes to VBA string (reuse stream object)
+    If m_readStm Is Nothing Then Set m_readStm = CreateObject("ADODB.Stream")
+    m_readStm.Type = 1: m_readStm.Open: m_readStm.Write buf
+    m_readStm.Position = 0: m_readStm.Type = 2: m_readStm.Charset = "UTF-8"
+    ReadTextFile = m_readStm.ReadText
+    m_readStm.Close
     Exit Function
 ErrOut:
     ReadTextFile = ""
+    On Error Resume Next: If Not m_readStm Is Nothing Then m_readStm.Close: On Error GoTo 0
 End Function
 
 Public Sub WriteTextFile(path As String, content As String)
     On Error GoTo ErrOut
-    Dim stm As Object: Set stm = CreateObject("ADODB.Stream")
-    stm.Type = 2: stm.Charset = "UTF-8"
-    stm.Open: stm.WriteText content
-    stm.Position = 0: stm.Type = 1: stm.Position = 3
+    If m_writeStm Is Nothing Then Set m_writeStm = CreateObject("ADODB.Stream")
+    m_writeStm.Type = 2: m_writeStm.Charset = "UTF-8"
+    m_writeStm.Open: m_writeStm.WriteText content
+    m_writeStm.Position = 0: m_writeStm.Type = 1: m_writeStm.Position = 3
     Dim out As Object: Set out = CreateObject("ADODB.Stream")
     out.Type = 1: out.Open
-    stm.CopyTo out
+    m_writeStm.CopyTo out
     out.SaveToFile path, 2
-    out.Close: stm.Close
+    out.Close: m_writeStm.Close
     Exit Sub
 ErrOut:
 End Sub

@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0273",
+  "entry_id": "00000273",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-07-24T14:38:00+09:00",
+  "sender_name": "中村 陽一",
+  "sender_email": "v666@bousai-net.or.jp",
+  "subject": "申請書類の提出（R06-131）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

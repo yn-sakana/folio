@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1319",
+  "entry_id": "00001319",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-04-28T11:24:00+09:00",
+  "sender_name": "高橋 明日香",
+  "sender_email": "f703@kodomo-mirai.org",
+  "subject": "申請内容の変更について（R06-648）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

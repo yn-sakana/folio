@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0430",
+  "entry_id": "00000430",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-08-20T09:42:00+09:00",
+  "sender_name": "太田 裕子",
+  "sender_email": "w658@sports-kitakanto.or.jp",
+  "subject": "書類修正のお知らせ（R06-208）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

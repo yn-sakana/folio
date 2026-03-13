@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1911",
+  "entry_id": "00001911",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-18T17:34:00+09:00",
+  "sender_name": "岡田 花子",
+  "sender_email": "b893@machizukuri.or.jp",
+  "subject": "書類修正のお知らせ（R06-948）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

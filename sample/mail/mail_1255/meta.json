@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1255",
+  "entry_id": "00001255",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-02T14:06:00+09:00",
+  "sender_name": "小林 光",
+  "sender_email": "a520@nogyo-shinko.or.jp",
+  "subject": "申請書類の提出（R06-617）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

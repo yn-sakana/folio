@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0312",
+  "entry_id": "00000312",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-08-31T14:46:00+09:00",
+  "sender_name": "松本 浩二",
+  "sender_email": "y504@kodomo-mirai.org",
+  "subject": "書類修正のお知らせ（R06-149）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

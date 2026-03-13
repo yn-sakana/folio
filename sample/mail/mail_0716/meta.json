@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0716",
+  "entry_id": "00000716",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-28T17:44:00+09:00",
+  "sender_name": "福田 裕子",
+  "sender_email": "j380@kankyo-suishin.or.jp",
+  "subject": "追加書類の送付（R06-344）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

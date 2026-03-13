@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0922",
+  "entry_id": "00000922",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-09-27T09:05:00+09:00",
+  "sender_name": "三浦 一郎",
+  "sender_email": "e383@kodomo-mirai.org",
+  "subject": "書類修正のお知らせ（R06-447）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

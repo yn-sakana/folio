@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-2008",
+  "entry_id": "00002008",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-14T17:07:00+09:00",
+  "sender_name": "伊藤 和子",
+  "sender_email": "w898@kanko-suishin.jp",
+  "subject": "不足書類の送付（R06-994）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

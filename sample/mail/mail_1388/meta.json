@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1388",
+  "entry_id": "00001388",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-17T17:58:00+09:00",
+  "sender_name": "太田 大輔",
+  "sender_email": "d653@kenkou-center.or.jp",
+  "subject": "交付金申請について（R06-682）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

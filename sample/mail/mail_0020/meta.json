@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0020",
+  "entry_id": "00000020",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-04-30T17:58:00+09:00",
+  "sender_name": "坂本 太郎",
+  "sender_email": "z319@dentou-bunka.or.jp",
+  "subject": "申請書類の提出（R06-009）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

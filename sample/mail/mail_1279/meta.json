@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1279",
+  "entry_id": "00001279",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-28T10:51:00+09:00",
+  "sender_name": "高橋 健一",
+  "sender_email": "y194@dentou-bunka.or.jp",
+  "subject": "書類修正のお知らせ（R06-629）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

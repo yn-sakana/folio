@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1034",
+  "entry_id": "00001034",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-09-08T10:37:00+09:00",
+  "sender_name": "上田 亮",
+  "sender_email": "v750@kanko-suishin.jp",
+  "subject": "書類修正のお知らせ（R06-500）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

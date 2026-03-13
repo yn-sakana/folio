@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1168",
+  "entry_id": "00001168",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-15T08:45:00+09:00",
+  "sender_name": "近藤 明日香",
+  "sender_email": "b633@dentou-bunka.or.jp",
+  "subject": "交付金に関するお問い合わせ（R06-572）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1628",
+  "entry_id": "00001628",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-09-04T16:32:00+09:00",
+  "sender_name": "森 直子",
+  "sender_email": "i791@hokuriku-shinko.or.jp",
+  "subject": "申請内容の変更について（R06-800）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

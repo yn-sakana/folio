@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1928",
+  "entry_id": "00001928",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-09-22T15:12:00+09:00",
+  "sender_name": "橋本 明日香",
+  "sender_email": "a417@sports-kitakanto.or.jp",
+  "subject": "書類修正のお知らせ（R06-956）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

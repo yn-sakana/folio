@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1605",
+  "entry_id": "00001605",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-07-31T08:46:00+09:00",
+  "sender_name": "森 千春",
+  "sender_email": "e594@kenkou-center.or.jp",
+  "subject": "書類修正のお知らせ（R06-787）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

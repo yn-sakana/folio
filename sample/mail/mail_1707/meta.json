@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1707",
+  "entry_id": "00001707",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-09-19T15:05:00+09:00",
+  "sender_name": "橋本 花子",
+  "sender_email": "y610@kokusai-koryu.or.jp",
+  "subject": "交付金に関するお問い合わせ（R06-840）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

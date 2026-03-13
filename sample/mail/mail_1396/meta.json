@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1396",
+  "entry_id": "00001396",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-27T08:54:00+09:00",
+  "sender_name": "福田 陽一",
+  "sender_email": "e391@kanko-suishin.jp",
+  "subject": "申請書類の提出（R06-685）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }]
+}

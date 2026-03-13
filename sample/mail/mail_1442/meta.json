@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1442",
+  "entry_id": "00001442",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-04-19T12:06:00+09:00",
+  "sender_name": "近藤 美咲",
+  "sender_email": "l449@digital-edu.net",
+  "subject": "書類修正のお知らせ（R06-706）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

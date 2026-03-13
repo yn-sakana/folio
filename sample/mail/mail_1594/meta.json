@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1594",
+  "entry_id": "00001594",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-07-10T08:40:00+09:00",
+  "sender_name": "前田 和子",
+  "sender_email": "f366@kodomo-mirai.org",
+  "subject": "交付金申請について（R06-782）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

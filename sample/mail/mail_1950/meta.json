@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1950",
+  "entry_id": "00001950",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-05T08:46:00+09:00",
+  "sender_name": "加藤 直子",
+  "sender_email": "q965@machizukuri.or.jp",
+  "subject": "交付金申請について（R06-965）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

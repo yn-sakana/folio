@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0762",
+  "entry_id": "00000762",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-10T17:22:00+09:00",
+  "sender_name": "長谷川 大輔",
+  "sender_email": "r148@green-energy-tohoku.co.jp",
+  "subject": "交付金申請について（R06-367）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}

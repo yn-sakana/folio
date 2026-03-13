@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0944",
+  "entry_id": "00000944",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-08-01T14:56:00+09:00",
+  "sender_name": "中村 綾",
+  "sender_email": "k808@dentou-bunka.or.jp",
+  "subject": "書類修正のお知らせ（R06-457）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

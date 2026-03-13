@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0790",
+  "entry_id": "00000790",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-08T12:24:00+09:00",
+  "sender_name": "中村 直子",
+  "sender_email": "n182@hokuriku-shinko.or.jp",
+  "subject": "交付金申請について（R06-379）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

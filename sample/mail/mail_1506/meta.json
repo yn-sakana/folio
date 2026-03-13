@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-1506",
+  "entry_id": "00001506",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-30T10:49:00+09:00",
+  "sender_name": "吉田 明日香",
+  "sender_email": "r230@bousai-net.or.jp",
+  "subject": "追加書類の送付（R06-738）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

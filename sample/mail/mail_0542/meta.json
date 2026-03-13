@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0542",
+  "entry_id": "00000542",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-05-08T08:25:00+09:00",
+  "sender_name": "渡辺 真由美",
+  "sender_email": "w846@sangyo-shinko.or.jp",
+  "subject": "交付金申請について（R06-260）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }]
+}

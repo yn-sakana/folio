@@ -1,0 +1,13 @@
+{
+  "mail_id": "MAIL-0240",
+  "entry_id": "00000240",
+  "mailbox_address": "review@example.org",
+  "folder_path": "受信トレイ/交付金申請",
+  "received_at": "2024-06-03T12:52:00+09:00",
+  "sender_name": "長谷川 恵子",
+  "sender_email": "s682@dentou-bunka.or.jp",
+  "subject": "書類修正のお知らせ（R06-114）",
+  "body_path": "body.txt",
+  "msg_path": "",
+  "attachments": [{ "path": "application.pdf" }, { "path": "doc_1.pdf" }, { "path": "doc_2.pdf" }]
+}
