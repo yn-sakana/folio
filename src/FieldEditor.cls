@@ -53,6 +53,7 @@ Public Sub SetValue(val As String)
     m_prevValue = val
     m_committedValue = val
     m_txt.Text = FormatDisplay(val)
+    m_txt.SelStart = 0
     m_suppressing = False
 End Sub
 
@@ -72,7 +73,7 @@ End Sub
 
 Private Function FormatDisplay(val As String) As String
     FormatDisplay = val
-    If m_fieldType <> "number" Then Exit Function
+    If m_fieldType <> "currency" Then Exit Function
     If Len(val) = 0 Then Exit Function
     If Not IsNumeric(val) Then Exit Function
     On Error Resume Next
@@ -83,9 +84,9 @@ Private Function FormatDisplay(val As String) As String
 End Function
 
 Private Function ParseRawValue() As String
-    ' Strip commas from displayed number to get raw value
+    ' Strip commas from displayed currency to get raw value
     Dim txt As String: txt = m_txt.Text
-    If m_fieldType = "number" Then
+    If m_fieldType = "currency" Then
         txt = Replace(txt, ",", "")
     End If
     ParseRawValue = txt

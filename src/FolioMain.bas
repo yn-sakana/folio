@@ -45,15 +45,23 @@ Public Sub PollCallback()
     End If
     On Error Resume Next
     frmFolio.DoPollCycle
+    ' Prevent PC sleep by sending a harmless key
+    Application.SendKeys "{F15}", True
     On Error GoTo 0
     If g_pollActive Then StartPolling
 End Sub
 
 Public Sub StartPolling()
     If Not g_pollActive Then Exit Sub
+    On Error Resume Next
     g_nextPollAt = Now + TimeSerial(0, 0, 5)
     g_pollScheduled = True
     Application.OnTime g_nextPollAt, "FolioMain.PollCallback"
+    If Err.Number <> 0 Then
+        g_pollScheduled = False
+        Err.Clear
+    End If
+    On Error GoTo 0
 End Sub
 
 Public Sub StopPolling()

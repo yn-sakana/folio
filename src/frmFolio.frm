@@ -23,6 +23,9 @@ Private WithEvents m_lstRecords As MSForms.ListBox
 Private WithEvents m_mpgTabs As MSForms.MultiPage
 Private WithEvents m_cmdSettings As MSForms.CommandButton
 Private WithEvents m_cmdResize As MSForms.CommandButton
+Private WithEvents m_cmdFilter As MSForms.CommandButton
+Private WithEvents m_cmdDraft As MSForms.CommandButton
+Private WithEvents m_cmdPrint As MSForms.CommandButton
 Private WithEvents m_cmdLogClear As MSForms.CommandButton
 Private WithEvents m_lstMail As MSForms.ListBox
 Private WithEvents m_lstAttach As MSForms.ListBox
@@ -31,6 +34,7 @@ Private WithEvents m_lstFiles As MSForms.ListBox
 ' Non-event controls
 Private m_lblStatus As MSForms.Label
 Private m_lblCount As MSForms.Label
+Private m_lblClock As MSForms.Label
 Private m_lstLog As MSForms.ListBox
 Private m_lblSubject As MSForms.Label
 Private m_lblFrom As MSForms.Label
@@ -53,7 +57,9 @@ Private m_caseIds As Object        ' Dictionary of known case folder names
 Private m_watcher As SheetWatcher
 Private m_fileTreeItems As Collection
 Private m_undoStack As Collection
+Private m_filterConditions As Collection
 Private m_loading As Boolean
+Private m_initialLoadDone As Boolean
 Private m_lastWidth As Single
 Private m_lastHeight As Single
 Private m_fieldGroupPageCount As Long
@@ -141,8 +147,14 @@ Private Sub BuildLayout()
 
     Dim cx As Single: cx = m_leftW + M * 2
     Set m_cmdSettings = AddButton(Me, "cmdSettings", cx, M, 60, 22, "Settings")
-    Set m_cmdResize = AddButton(Me, "cmdResize", cx + 64, M, 22, 22, "R")
+    Set m_cmdResize = AddButton(Me, "cmdResize", cx + 64, M, 50, 22, "Resize")
     m_cmdResize.Font.Size = 8
+    Set m_cmdFilter = AddButton(Me, "cmdFilter", cx + 118, M, 50, 22, "Filter")
+    m_cmdFilter.Font.Size = 8
+    Set m_cmdDraft = AddButton(Me, "cmdDraft", cx + 172, M, 50, 22, "Draft")
+    m_cmdDraft.Font.Size = 8
+    Set m_cmdPrint = AddButton(Me, "cmdPrint", cx + 226, M, 50, 22, "Print")
+    m_cmdPrint.Font.Size = 8
 
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
     With m_mpgTabs
@@ -167,11 +179,18 @@ Private Sub BuildLayout()
     m_lblCount.SpecialEffect = fmSpecialEffectFlat
     m_lblCount.BorderStyle = fmBorderStyleSingle
     m_lblCount.Caption = "  0 records"
-    Set m_lblStatus = AddLabel(Me, "lblStatus", m_leftW + M * 2, sbTop, cw - m_leftW - M * 2, 16)
+    Dim clockW As Single: clockW = 60
+    Set m_lblStatus = AddLabel(Me, "lblStatus", m_leftW + M * 2, sbTop, cw - m_leftW - M * 2 - clockW, 16)
     m_lblStatus.BackColor = &HF0F0F0
     m_lblStatus.SpecialEffect = fmSpecialEffectFlat
     m_lblStatus.BorderStyle = fmBorderStyleSingle
     m_lblStatus.Caption = "  Ready"
+    Set m_lblClock = AddLabel(Me, "lblClock", cw - clockW, sbTop, clockW, 16)
+    m_lblClock.BackColor = &HF0F0F0
+    m_lblClock.SpecialEffect = fmSpecialEffectFlat
+    m_lblClock.BorderStyle = fmBorderStyleSingle
+    m_lblClock.TextAlign = fmTextAlignCenter
+    m_lblClock.Caption = Format$(Now, "hh:nn:ss")
 
     LoadChangeLog
     eh.OK: Exit Sub
@@ -180,6 +199,71 @@ End Sub
 
 Private Sub m_cmdResize_Click()
     frmResize.ShowFor Me
+End Sub
+
+Private Sub m_cmdPrint_Click()
+    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdPrint_Click"
+    On Error GoTo ErrHandler
+    Dim activeTab As Long: activeTab = m_mpgTabs.Value
+
+    If activeTab = m_mailPageIdx And m_mailPageIdx >= 0 Then
+        ' Print selected mail + attachments
+        If m_lstMail Is Nothing Then Exit Sub
+        Dim mi As Long: mi = m_lstMail.ListIndex
+        If mi < 0 Then MsgBox "Select a mail to print.", vbExclamation: Exit Sub
+        FolioPrint.PrintMailFiles m_matchedMails, mi + 1
+    ElseIf activeTab = m_filesPageIdx And m_filesPageIdx >= 0 Then
+        ' Print selected file(s)
+        If m_lstFiles Is Nothing Then Exit Sub
+        Dim fi As Long: fi = m_lstFiles.ListIndex
+        If fi < 0 Then MsgBox "Select a file to print.", vbExclamation: Exit Sub
+        Dim indices As New Collection: indices.Add fi + 1
+        FolioPrint.PrintFolderFiles m_fileTreeItems, indices
+    Else
+        ' Print current record
+        If m_currentRecIdx > 0 And Not m_currentTable Is Nothing Then
+            FolioPrint.PrintRecord m_currentTable, m_currentRecIdx, m_currentSource
+        Else
+            MsgBox "No record selected.", vbExclamation
+        End If
+    End If
+    eh.OK: Exit Sub
+ErrHandler: eh.Catch
+End Sub
+
+Private Sub m_cmdDraft_Click()
+    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdDraft_Click"
+    On Error GoTo ErrHandler
+    frmDraft.Show vbModal
+    Dim choice As String: choice = frmDraft.Choice
+    Unload frmDraft
+    Select Case choice
+        Case "single"
+            If m_currentRecIdx > 0 And Not m_currentTable Is Nothing Then
+                FolioDraft.CreateDraftForRecord m_currentTable, m_currentRecIdx, m_currentSource
+            Else
+                MsgBox "No record selected.", vbExclamation
+            End If
+        Case "bulk"
+            Dim frm As New frmBulkDraft
+            frm.SetContext m_currentTable, m_currentSource
+            frm.Show vbModal
+    End Select
+    eh.OK: Exit Sub
+ErrHandler: eh.Catch
+End Sub
+
+Private Sub m_cmdFilter_Click()
+    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdFilter_Click"
+    On Error GoTo ErrHandler
+    Dim fields As Collection: Set fields = FolioConfig.GetFieldNames(m_currentSource)
+    frmFilter.SetFieldNames fields
+    frmFilter.Show vbModal
+    Set m_filterConditions = frmFilter.FilterConditions
+    Unload frmFilter
+    UpdateRecordList
+    eh.OK: Exit Sub
+ErrHandler: eh.Catch
 End Sub
 
 ' Called from frmResize
@@ -230,6 +314,9 @@ Private Sub RepositionControls()
     ' Toolbar buttons
     m_cmdSettings.Left = cx
     m_cmdResize.Left = cx + 64
+    m_cmdFilter.Left = cx + 118
+    m_cmdDraft.Left = cx + 172
+    m_cmdPrint.Left = cx + 226
 
     ' Center (tabs)
     m_mpgTabs.Left = cx: m_mpgTabs.Top = M + 26
@@ -241,9 +328,11 @@ Private Sub RepositionControls()
 
     ' Status bar
     Dim sbTop As Single: sbTop = ch - 20
+    Dim clockW As Single: clockW = 60
     m_lblCount.Left = M: m_lblCount.Top = sbTop: m_lblCount.Width = m_leftW
     m_lblStatus.Left = m_leftW + M * 2: m_lblStatus.Top = sbTop
-    m_lblStatus.Width = cw - m_leftW - M * 2
+    m_lblStatus.Width = cw - m_leftW - M * 2 - clockW
+    m_lblClock.Left = cw - clockW: m_lblClock.Top = sbTop: m_lblClock.Width = clockW
     ResizeTabContents
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -444,6 +533,7 @@ Private Sub SwitchSource(sourceName As String)
     m_loading = False
     UpdateRecordList
     LoadChangeLog
+    m_initialLoadDone = True
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -533,8 +623,11 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
     Dim editorW As Single: editorW = pw - editorLeft - sbW - 8
 
     Dim i As Long
+    Dim HIDE_SUFFIX As String: HIDE_SUFFIX = "_" & ChrW$(38750) & ChrW$(34920) & ChrW$(31034)
     For i = 1 To fields.Count
         Dim fn As String: fn = CStr(fields(i))
+        ' Skip fields ending with "_非表示"
+        If Right$(fn, Len(HIDE_SUFFIX)) = HIDE_SUFFIX Then GoTo NextField
         Dim isMultiline As Boolean: isMultiline = FolioConfig.GetFieldBool(m_currentSource, fn, "multiline")
         Dim isEditable As Boolean: isEditable = FolioConfig.GetFieldBool(m_currentSource, fn, "editable", True)
         If fn = keyCol Then isEditable = False
@@ -562,6 +655,11 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         If Not isEditable Then txt.BackColor = &HF8F8F8
         If isMultiline Then txt.MultiLine = True: txt.ScrollBars = fmScrollBarsVertical: txt.WordWrap = True
         If isNumber Then txt.TextAlign = fmTextAlignRight
+        ' IME mode based on field type
+        Select Case fType
+            Case "number", "date", "currency": txt.IMEMode = fmIMEModeDisable
+            Case Else: txt.IMEMode = fmIMEModeHiragana
+        End Select
 
         Dim editor As FieldEditor
         Set editor = New FieldEditor
@@ -569,6 +667,7 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         m_fieldEditors.Add editor
 
         yPos = yPos + rowH + 20
+NextField:
     Next i
 
     fraScroll.ScrollHeight = yPos + 4
@@ -725,6 +824,7 @@ Private Sub UpdateRecordList()
     Dim filterText As String: filterText = Trim$(m_txtFilter.Text)
     Dim r As Long
     For r = 1 To rowCount
+        ' Text filter (simple full-text search)
         If Len(filterText) > 0 Then
             Dim allText As String: allText = ""
             Dim col As ListColumn
@@ -735,6 +835,12 @@ Private Sub UpdateRecordList()
                 End If
             Next col
             If InStr(1, allText, filterText, vbTextCompare) = 0 Then GoTo NextRec
+        End If
+        ' Advanced filter conditions
+        If Not m_filterConditions Is Nothing Then
+            If m_filterConditions.Count > 0 Then
+                If Not EvalFilterConditions(r) Then GoTo NextRec
+            End If
         End If
         Dim label As String: label = ""
         Dim ci As Long
@@ -781,6 +887,9 @@ Private Sub UpdateDetail()
         Exit Sub
     End If
     m_currentRecIdx = CLng(m_filteredRows(idx + 1))
+    On Error Resume Next
+    m_mpgTabs.Value = 0
+    On Error GoTo 0
     FillFieldEditors
     UpdateMailTab
     UpdateFilesTab
@@ -842,7 +951,8 @@ Private Sub UpdateMailTab()
 
     Dim mailMatchField As String: mailMatchField = FolioConfig.GetSourceStr(m_currentSource, "mail_match_field")
     If Len(mailMatchField) = 0 Then mailMatchField = "sender_email"
-    Set m_matchedMails = FolioData.FindJoinedRecords(m_allMailRecords, mailMatchField, linkVal, "exact")
+    Dim mailMatchMode As String: mailMatchMode = FolioConfig.GetSourceStr(m_currentSource, "mail_match_mode", "exact")
+    Set m_matchedMails = FolioData.FindJoinedRecords(m_allMailRecords, mailMatchField, linkVal, mailMatchMode)
 
     Dim i As Long
     For i = 1 To m_matchedMails.Count
@@ -879,7 +989,7 @@ Private Sub UpdateFilesTab()
     If Not IsNull(linkVar) And Not IsEmpty(linkVar) Then linkVal = CStr(linkVar)
 
     Dim matched As Collection
-    Set matched = FolioData.FindJoinedRecords(m_folderRecords, "case_id", linkVal)
+    Set matched = FolioData.FindJoinedRecords(m_folderRecords, "case_id", linkVal, "prefix")
 
     ' Build tree: group by folder_path, show folder nodes then files
     Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
@@ -1005,6 +1115,58 @@ Private Function TreePrefix(nodes As Collection, idx As Long, depth As Long) As 
 End Function
 
 ' ============================================================================
+' Advanced Filter Evaluation
+' ============================================================================
+
+Private Function EvalFilterConditions(rowIdx As Long) As Boolean
+    On Error Resume Next
+    If m_filterConditions Is Nothing Then EvalFilterConditions = True: Exit Function
+    If m_filterConditions.Count = 0 Then EvalFilterConditions = True: Exit Function
+
+    Dim result As Boolean: result = True
+    Dim i As Long
+    For i = 1 To m_filterConditions.Count
+        Dim cond As Object: Set cond = m_filterConditions(i)
+        Dim fld As String: fld = FolioHelpers.DictStr(cond, "field")
+        Dim op As String: op = FolioHelpers.DictStr(cond, "op")
+        Dim condVal As String: condVal = FolioHelpers.DictStr(cond, "value")
+        Dim logic As String: logic = FolioHelpers.DictStr(cond, "logic", "AND")
+
+        Dim cellVal As Variant: cellVal = TableCellValue(rowIdx, fld)
+        Dim cellStr As String
+        If IsNull(cellVal) Or IsEmpty(cellVal) Then cellStr = "" Else cellStr = CStr(cellVal)
+        Dim matched As Boolean: matched = False
+
+        Select Case op
+            Case "=": matched = (LCase$(cellStr) = LCase$(condVal))
+            Case "<>": matched = (LCase$(cellStr) <> LCase$(condVal))
+            Case ">":
+                If IsNumeric(cellStr) And IsNumeric(condVal) Then matched = (CDbl(cellStr) > CDbl(condVal))
+            Case "<":
+                If IsNumeric(cellStr) And IsNumeric(condVal) Then matched = (CDbl(cellStr) < CDbl(condVal))
+            Case ">=":
+                If IsNumeric(cellStr) And IsNumeric(condVal) Then matched = (CDbl(cellStr) >= CDbl(condVal))
+            Case "<=":
+                If IsNumeric(cellStr) And IsNumeric(condVal) Then matched = (CDbl(cellStr) <= CDbl(condVal))
+            Case "LIKE": matched = (InStr(1, cellStr, condVal, vbTextCompare) > 0)
+        End Select
+
+        If i = 1 Then
+            result = matched
+        Else
+            Dim prevLogic As String: prevLogic = FolioHelpers.DictStr(m_filterConditions(i - 1), "logic", "AND")
+            If prevLogic = "OR" Then
+                result = result Or matched
+            Else
+                result = result And matched
+            End If
+        End If
+    Next i
+    EvalFilterConditions = result
+    On Error GoTo 0
+End Function
+
+' ============================================================================
 ' Save / Undo
 ' ============================================================================
 
@@ -1111,6 +1273,7 @@ Private Sub AddLogLine(src As String, key As String, field As String, oldVal As 
     Else
         m_lstLog.AddItem line
     End If
+    m_lstLog.TopIndex = 0
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1137,6 +1300,7 @@ Public Sub DoPollCycle()
         m_lastWidth = Me.Width: m_lastHeight = Me.Height
         RepositionControls
     End If
+    If Not m_lblClock Is Nothing Then m_lblClock.Caption = Format$(Now, "hh:nn:ss")
     If Len(m_currentSource) > 0 And Not m_loading Then RefreshJoinedData
     On Error GoTo 0
 End Sub
@@ -1157,6 +1321,9 @@ End Sub
 Private Sub RefreshJoinedData()
     On Error Resume Next
 
+    ' Only rescan files/mail during poll cycle (not on every record switch)
+    ' m_allMailRecords and m_folderRecords are loaded once in SwitchSource
+    ' and refreshed here every 5s poll
     Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
     If Len(mailFolder) > 0 Then Set m_allMailRecords = FolioData.ReadMailArchive(mailFolder)
     Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
@@ -1172,17 +1339,19 @@ Private Sub RefreshJoinedData()
         If Len(eid) > 0 Then
             Dim mailLabel As String: mailLabel = FolioHelpers.DictStr(mRec, "subject") & " - " & FolioHelpers.DictStr(mRec, "sender_email")
             currentMailIds.Add eid, mailLabel
-            If Not m_mailEntryIds.Exists(eid) Then
+            If m_initialLoadDone And Not m_mailEntryIds.Exists(eid) Then
                 AddLogLine m_currentSource, "", "mail", "", mailLabel, "add"
             End If
         End If
     Next i
-    Dim mKeys As Variant: mKeys = m_mailEntryIds.keys
-    For i = 0 To m_mailEntryIds.Count - 1
-        If Not currentMailIds.Exists(mKeys(i)) Then
-            AddLogLine m_currentSource, "", "mail", "", CStr(m_mailEntryIds(mKeys(i))), "delete"
-        End If
-    Next i
+    If m_initialLoadDone Then
+        Dim mKeys As Variant: mKeys = m_mailEntryIds.keys
+        For i = 0 To m_mailEntryIds.Count - 1
+            If Not currentMailIds.Exists(mKeys(i)) Then
+                AddLogLine m_currentSource, "", "mail", "", CStr(m_mailEntryIds(mKeys(i))), "delete"
+            End If
+        Next i
+    End If
     Set m_mailEntryIds = currentMailIds
 
     ' --- Files: add / delete (case folder level) ---
@@ -1192,17 +1361,19 @@ Private Sub RefreshJoinedData()
         Dim cid As String: cid = FolioHelpers.DictStr(fRec, "case_id")
         If Len(cid) > 0 And Not currentCaseIds.Exists(cid) Then
             currentCaseIds.Add cid, True
-            If Not m_caseIds.Exists(cid) Then
+            If m_initialLoadDone And Not m_caseIds.Exists(cid) Then
                 AddLogLine m_currentSource, cid, "file", "", "", "add"
             End If
         End If
     Next i
-    Dim fKeys As Variant: fKeys = m_caseIds.keys
-    For i = 0 To m_caseIds.Count - 1
-        If Not currentCaseIds.Exists(fKeys(i)) Then
-            AddLogLine m_currentSource, CStr(fKeys(i)), "file", "", "", "delete"
-        End If
-    Next i
+    If m_initialLoadDone Then
+        Dim fKeys As Variant: fKeys = m_caseIds.keys
+        For i = 0 To m_caseIds.Count - 1
+            If Not currentCaseIds.Exists(fKeys(i)) Then
+                AddLogLine m_currentSource, CStr(fKeys(i)), "file", "", "", "delete"
+            End If
+        Next i
+    End If
     Set m_caseIds = currentCaseIds
 
     If m_currentRecIdx > 0 Then
@@ -1392,6 +1563,7 @@ End Sub
 Private Sub CleanupRefs()
     On Error Resume Next
     CommitPendingEdits
+    Unload frmResize
     If Not m_watcher Is Nothing Then m_watcher.StopWatching
     Set m_watcher = Nothing
     Set m_currentTable = Nothing

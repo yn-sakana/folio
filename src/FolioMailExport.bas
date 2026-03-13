@@ -129,6 +129,9 @@ Public Sub FolioMail_Run()
     frmMailExport.ShowAs "export"
 End Sub
 
+' Progress callback object (set by frmMailExport before export)
+Public g_progressCallback As Object  ' frmMailExport
+
 ' Called from frmMailExport Export button (uses form values, not registry)
 Public Function RunExport(ByVal exportRoot As String, ByVal days As Long, _
         Optional ByVal filterAccount As String = "", Optional ByVal filterFolder As String = "") As Long
@@ -290,6 +293,10 @@ Private Function ExportFolderTree(ByVal targetFolder As Outlook.Folder, ByVal ex
                 If Err.Number = 0 Then
                     total = total + 1
                     Debug.Print "[FolioMail]   Exported: " & mail.Subject
+                    ' Report progress
+                    If Not g_progressCallback Is Nothing Then
+                        g_progressCallback.OnExportProgress total, mail.Subject
+                    End If
                 Else
                     Debug.Print "[FolioMail]   ERROR: " & mail.Subject & " - " & Err.Description
                     Err.Clear
@@ -394,13 +401,19 @@ End Function
 Private Function GetStoreSmtpAddress(ByVal store As Outlook.Store) As String
     Dim account As Outlook.Account
     On Error Resume Next
+    ' Try matching account first
     For Each account In Application.Session.Accounts
         If account.DeliveryStore.StoreID = store.StoreID Then
             GetStoreSmtpAddress = LCase$(account.SmtpAddress)
             Exit Function
         End If
     Next account
+    ' Fallback: SMTP address from MAPI property (works for shared mailboxes)
     GetStoreSmtpAddress = LCase$(store.GetRootFolder.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x39FE001E"))
+    If Len(GetStoreSmtpAddress) = 0 Then
+        ' Last resort: use display name of root folder
+        GetStoreSmtpAddress = LCase$(store.DisplayName)
+    End If
     On Error GoTo 0
 End Function
 
@@ -481,11 +494,19 @@ Private Function JsonEscape(ByVal value As String) As String
 End Function
 
 Private Sub WriteTextFile(ByVal path As String, ByVal contents As String)
-    Dim fileNumber As Integer
-    fileNumber = FreeFile
-    Open path For Output As #fileNumber
-    Print #fileNumber, contents
-    Close #fileNumber
+    On Error GoTo ErrOut
+    Dim stm As Object: Set stm = CreateObject("ADODB.Stream")
+    stm.Type = 2: stm.Charset = "UTF-8"
+    stm.Open: stm.WriteText contents
+    ' Strip BOM for clean UTF-8
+    stm.Position = 0: stm.Type = 1: stm.Position = 3
+    Dim out As Object: Set out = CreateObject("ADODB.Stream")
+    out.Type = 1: out.Open
+    stm.CopyTo out
+    out.SaveToFile path, 2
+    out.Close: stm.Close
+    Exit Sub
+ErrOut:
 End Sub
 
 Private Sub EnsureFolder(ByVal path As String)

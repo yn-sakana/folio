@@ -322,7 +322,7 @@ Public Function FormatFieldValue(val As Variant, Optional fieldType As String = 
             If VarType(val) = vbDate Then
                 FormatFieldValue = Format$(CDate(val), "yyyy/mm/dd"): Exit Function
             End If
-        Case "number"
+        Case "currency"
             If IsNumeric(s) Then
                 Dim n As Double: n = CDbl(s)
                 If n = Int(n) Then

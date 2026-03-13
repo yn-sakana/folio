@@ -23,6 +23,7 @@ Private WithEvents m_cmbKeyCol As MSForms.ComboBox
 Private WithEvents m_cmbNameCol As MSForms.ComboBox
 Private WithEvents m_cmbMailCol As MSForms.ComboBox
 Private WithEvents m_cmbFolderCol As MSForms.ComboBox
+Private m_cmbMailMatchMode As MSForms.ComboBox
 Private WithEvents m_cmdBrowseMail As MSForms.CommandButton
 Private WithEvents m_cmdBrowseCase As MSForms.CommandButton
 Private WithEvents m_cmdSave As MSForms.CommandButton
@@ -31,6 +32,10 @@ Private WithEvents m_cmdCancel As MSForms.CommandButton
 Private m_txtExcelPath As MSForms.TextBox
 Private m_txtMailFolder As MSForms.TextBox
 Private m_txtCaseFolder As MSForms.TextBox
+Private m_txtDraftFrom As MSForms.TextBox
+Private m_txtDraftSubject As MSForms.TextBox
+Private m_txtDraftBody As MSForms.TextBox
+Private m_mpgSettingsTabs As MSForms.MultiPage
 
 ' ============================================================================
 ' State
@@ -50,7 +55,7 @@ Private Const ROW_H As Single = 28
 Private Sub UserForm_Initialize()
     Dim eh As New ErrorHandler: eh.Enter "frmSettings", "UserForm_Initialize"
     On Error GoTo ErrHandler
-    Me.Width = 440: Me.Height = 380
+    Me.Width = 440: Me.Height = 440
     m_suppressEvents = True
     BuildLayout
     LoadConfig
@@ -67,57 +72,103 @@ Private Sub BuildLayout()
     Me.BackColor = &HFFFFFF
     Dim cw As Single: cw = Me.InsideWidth
     Dim ch As Single: ch = Me.InsideHeight
+
+    ' --- MultiPage tabs ---
+    Set m_mpgSettingsTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgSettings")
+    m_mpgSettingsTabs.Left = 4: m_mpgSettingsTabs.Top = 4
+    m_mpgSettingsTabs.Width = cw - 8: m_mpgSettingsTabs.Height = ch - 44
+    m_mpgSettingsTabs.Font.Name = "Meiryo UI": m_mpgSettingsTabs.Font.Size = 9
+    m_mpgSettingsTabs.BackColor = &HFFFFFF
+    m_mpgSettingsTabs.Pages(0).Caption = "General"
+    m_mpgSettingsTabs.Pages.Add
+    m_mpgSettingsTabs.Pages(1).Caption = "Mail"
+
+    Dim pgGen As MSForms.Page: Set pgGen = m_mpgSettingsTabs.Pages(0)
+    Dim pgMail As MSForms.Page: Set pgMail = m_mpgSettingsTabs.Pages(1)
+    Dim pw As Single: pw = m_mpgSettingsTabs.Width - 12
     Dim inputL As Single: inputL = M + LBL_W + 4
-    Dim inputW As Single: inputW = cw - inputL - M
-    Dim y As Single: y = M
+    Dim inputW As Single: inputW = pw - inputL - M
+    Dim y As Single
 
-    ' --- Source ---
-    AddSection Me, "secSrc", M, y, "Source"
+    ' ====== General Tab ======
+    y = M
+    AddSection pgGen, "secSrc", M, y, "Source"
     y = y + 20
 
-    AddLabel Me, "lblExcel", M, y, LBL_W, "Excel file:"
-    Set m_txtExcelPath = AddTextBox(Me, "txtExcel", inputL, y, inputW - 36)
-    Set m_cmdBrowseExcel = AddBtn(Me, "cmdBrExcel", cw - M - 32, y, 32, 20, "...")
+    AddLabel pgGen, "lblExcel", M, y, LBL_W, "Excel file:"
+    Set m_txtExcelPath = AddTextBox(pgGen, "txtExcel", inputL, y, inputW - 36)
+    Set m_cmdBrowseExcel = AddBtn(pgGen, "cmdBrExcel", pw - M - 32, y, 32, 20, "...")
     y = y + ROW_H
 
-    AddLabel Me, "lblTable", M, y, LBL_W, "Table:"
-    Set m_cmbTable = AddCombo(Me, "cmbTable", inputL, y, inputW)
+    AddLabel pgGen, "lblTable", M, y, LBL_W, "Table:"
+    Set m_cmbTable = AddCombo(pgGen, "cmbTable", inputL, y, inputW)
     y = y + ROW_H
 
-    AddLabel Me, "lblKey", M, y, LBL_W, "Key column:"
-    Set m_cmbKeyCol = AddCombo(Me, "cmbKey", inputL, y, inputW)
+    AddLabel pgGen, "lblKey", M, y, LBL_W, "Key column:"
+    Set m_cmbKeyCol = AddCombo(pgGen, "cmbKey", inputL, y, inputW)
     y = y + ROW_H
 
-    AddLabel Me, "lblName", M, y, LBL_W, "Name column:"
-    Set m_cmbNameCol = AddCombo(Me, "cmbName", inputL, y, inputW)
+    AddLabel pgGen, "lblName", M, y, LBL_W, "Name column:"
+    Set m_cmbNameCol = AddCombo(pgGen, "cmbName", inputL, y, inputW)
     y = y + ROW_H + 8
 
-    ' --- Link fields ---
-    AddSection Me, "secLink", M, y, "Link fields"
+    AddSection pgGen, "secLink", M, y, "Link fields"
     y = y + 20
 
-    AddLabel Me, "lblMailFld", M, y, LBL_W, "Mail field:"
-    Set m_cmbMailCol = AddCombo(Me, "cmbMailFld", inputL, y, inputW)
+    AddLabel pgGen, "lblMailFld", M, y, LBL_W, "Mail field:"
+    Set m_cmbMailCol = AddCombo(pgGen, "cmbMailFld", inputL, y, inputW)
     y = y + ROW_H
 
-    AddLabel Me, "lblFolderFld", M, y, LBL_W, "Folder field:"
-    Set m_cmbFolderCol = AddCombo(Me, "cmbFolderFld", inputL, y, inputW)
+    AddLabel pgGen, "lblMailMatch", M, y, LBL_W, "Mail match:"
+    Set m_cmbMailMatchMode = AddCombo(pgGen, "cmbMailMatch", inputL, y, inputW)
+    m_cmbMailMatchMode.AddItem "exact"
+    m_cmbMailMatchMode.AddItem "domain"
+    m_cmbMailMatchMode.ListIndex = 0
+    y = y + ROW_H
+
+    AddLabel pgGen, "lblFolderFld", M, y, LBL_W, "Folder field:"
+    Set m_cmbFolderCol = AddCombo(pgGen, "cmbFolderFld", inputL, y, inputW)
     y = y + ROW_H + 8
 
-    ' --- Paths ---
-    AddSection Me, "secPath", M, y, "Paths"
+    AddSection pgGen, "secPath", M, y, "Paths"
     y = y + 20
 
-    AddLabel Me, "lblMailDir", M, y, LBL_W, "Mail folder:"
-    Set m_txtMailFolder = AddTextBox(Me, "txtMailDir", inputL, y, inputW - 36)
-    Set m_cmdBrowseMail = AddBtn(Me, "cmdBrMail", cw - M - 32, y, 32, 20, "...")
+    AddLabel pgGen, "lblMailDir", M, y, LBL_W, "Mail folder:"
+    Set m_txtMailFolder = AddTextBox(pgGen, "txtMailDir", inputL, y, inputW - 36)
+    Set m_cmdBrowseMail = AddBtn(pgGen, "cmdBrMail", pw - M - 32, y, 32, 20, "...")
     y = y + ROW_H
 
-    AddLabel Me, "lblCaseDir", M, y, LBL_W, "Case folder:"
-    Set m_txtCaseFolder = AddTextBox(Me, "txtCaseDir", inputL, y, inputW - 36)
-    Set m_cmdBrowseCase = AddBtn(Me, "cmdBrCase", cw - M - 32, y, 32, 20, "...")
+    AddLabel pgGen, "lblCaseDir", M, y, LBL_W, "Case folder:"
+    Set m_txtCaseFolder = AddTextBox(pgGen, "txtCaseDir", inputL, y, inputW - 36)
+    Set m_cmdBrowseCase = AddBtn(pgGen, "cmdBrCase", pw - M - 32, y, 32, 20, "...")
 
-    ' --- Buttons ---
+    ' ====== Mail Tab (Draft settings) ======
+    y = M
+    AddSection pgMail, "secDraft", M, y, "Draft Template"
+    y = y + 20
+
+    AddLabel pgMail, "lblDraftFrom", M, y, LBL_W, "From:"
+    Set m_txtDraftFrom = AddTextBox(pgMail, "txtDraftFrom", inputL, y, inputW)
+    y = y + ROW_H
+
+    AddLabel pgMail, "lblDraftSubj", M, y, LBL_W, "Subject:"
+    Set m_txtDraftSubject = AddTextBox(pgMail, "txtDraftSubj", inputL, y, inputW)
+    y = y + ROW_H
+
+    AddLabel pgMail, "lblDraftBody", M, y, LBL_W, "Body:"
+    Set m_txtDraftBody = AddTextBox(pgMail, "txtDraftBody", inputL, y, inputW)
+    m_txtDraftBody.Height = 100
+    m_txtDraftBody.MultiLine = True
+    m_txtDraftBody.ScrollBars = fmScrollBarsVertical
+    m_txtDraftBody.WordWrap = True
+    y = y + 110
+
+    Dim lblHint As MSForms.Label
+    Set lblHint = AddLabel(pgMail, "lblHint", M, y, pw - M * 2, "Placeholders: {key} {name} {email} \n")
+    lblHint.ForeColor = RGB(120, 120, 120)
+    lblHint.Font.Size = 8
+
+    ' --- Buttons (on form, not on page) ---
     Set m_cmdSave = AddBtn(Me, "cmdSave", cw - 170, ch - 36, 75, 26, "Save")
     Set m_cmdCancel = AddBtn(Me, "cmdCancel", cw - 84, ch - 36, 75, 26, "Cancel")
 End Sub
@@ -184,6 +235,9 @@ Private Sub LoadConfig()
     m_txtExcelPath.Text = FolioConfig.GetStr("excel_path")
     m_txtMailFolder.Text = FolioConfig.GetStr("mail_folder")
     m_txtCaseFolder.Text = FolioConfig.GetStr("case_folder_root")
+    m_txtDraftFrom.Text = FolioConfig.GetStr("draft_from")
+    m_txtDraftSubject.Text = FolioConfig.GetStr("draft_subject")
+    m_txtDraftBody.Text = Replace(FolioConfig.GetStr("draft_body"), "\n", vbCrLf)
 
     ' Load tables from Excel path
     If Len(m_txtExcelPath.Text) > 0 Then LoadTables
@@ -197,6 +251,7 @@ Private Sub LoadConfig()
         SelectComboItem m_cmbKeyCol, FolioConfig.GetSourceStr(src, "key_column")
         SelectComboItem m_cmbNameCol, FolioConfig.GetSourceStr(src, "display_name_column")
         SelectComboItem m_cmbMailCol, FolioConfig.GetSourceStr(src, "mail_link_column")
+        SelectComboItem m_cmbMailMatchMode, FolioConfig.GetSourceStr(src, "mail_match_mode", "exact")
         SelectComboItem m_cmbFolderCol, FolioConfig.GetSourceStr(src, "folder_link_column")
     End If
 
@@ -336,6 +391,9 @@ Private Sub m_cmdSave_Click()
     FolioConfig.SetStr "excel_path", m_txtExcelPath.Text
     FolioConfig.SetStr "mail_folder", m_txtMailFolder.Text
     FolioConfig.SetStr "case_folder_root", m_txtCaseFolder.Text
+    FolioConfig.SetStr "draft_from", m_txtDraftFrom.Text
+    FolioConfig.SetStr "draft_subject", m_txtDraftSubject.Text
+    FolioConfig.SetStr "draft_body", Replace(m_txtDraftBody.Text, vbCrLf, "\n")
 
     If m_cmbTable.ListIndex >= 0 Then
         Dim src As String: src = m_cmbTable.Text
@@ -343,6 +401,7 @@ Private Sub m_cmdSave_Click()
         FolioConfig.SetSourceStr src, "key_column", m_cmbKeyCol.Text
         FolioConfig.SetSourceStr src, "display_name_column", m_cmbNameCol.Text
         If m_cmbMailCol.ListIndex > 0 Then FolioConfig.SetSourceStr src, "mail_link_column", m_cmbMailCol.Text
+        FolioConfig.SetSourceStr src, "mail_match_mode", m_cmbMailMatchMode.Text
         If m_cmbFolderCol.ListIndex > 0 Then FolioConfig.SetSourceStr src, "folder_link_column", m_cmbFolderCol.Text
 
         ' Auto-detect field settings from table format

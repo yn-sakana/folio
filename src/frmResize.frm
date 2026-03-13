@@ -28,9 +28,7 @@ Public Sub ShowFor(target As Object)
     m_loading = True
     BuildLayout
     m_loading = False
-    Me.StartUpPosition = 0
-    Me.Left = m_target.Left + m_target.Width + 4
-    Me.Top = m_target.Top
+    Me.StartUpPosition = 1  ' CenterOwner
     Me.Show vbModeless
 End Sub
 

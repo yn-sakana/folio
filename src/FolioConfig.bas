@@ -11,7 +11,7 @@ Private Const SH_FIELDS As String = "_folio_fields"
 
 Public Sub EnsureConfigSheets()
     EnsureSheet SH_CONFIG, Array("key", "value")
-    EnsureSheet SH_SOURCES, Array("source_name", "key_column", "display_name_column", "mail_link_column", "folder_link_column")
+    EnsureSheet SH_SOURCES, Array("source_name", "key_column", "display_name_column", "mail_link_column", "folder_link_column", "mail_match_mode")
     EnsureSheet SH_FIELDS, Array("source_name", "field_name", "type", "in_list", "editable", "multiline")
 End Sub
 
@@ -257,6 +257,8 @@ Private Function GuessFieldType(col As ListColumn) As String
     ' Check NumberFormat first
     Dim fmt As String: fmt = CStr(col.DataBodyRange.Cells(1, 1).NumberFormat)
     If fmt Like "*yy*" Or fmt Like "*mm*dd*" Then GuessFieldType = "date": Exit Function
+    ' Currency: formats with comma grouping or currency symbols
+    If fmt Like "*#,##0*" Or fmt Like "*" & ChrW$(165) & "*" Or fmt Like "*$*" Then GuessFieldType = "currency": Exit Function
     If fmt Like "#*" Or fmt Like "0*" Or fmt Like "*%*" Then GuessFieldType = "number": Exit Function
 
     ' Fallback: check values
@@ -265,8 +267,9 @@ Private Function GuessFieldType(col As ListColumn) As String
         Dim v As Variant: v = col.DataBodyRange.Cells(r, 1).Value
         If Not IsEmpty(v) And Not IsNull(v) Then
             If VarType(v) = vbDate Then GuessFieldType = "date": Exit Function
+            If VarType(v) = vbCurrency Then GuessFieldType = "currency": Exit Function
             If VarType(v) = vbDouble Or VarType(v) = vbLong Or VarType(v) = vbInteger Or _
-               VarType(v) = vbSingle Or VarType(v) = vbCurrency Then GuessFieldType = "number": Exit Function
+               VarType(v) = vbSingle Then GuessFieldType = "number": Exit Function
             Exit Function
         End If
     Next r

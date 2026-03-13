@@ -22,6 +22,7 @@ Private WithEvents m_cmdCancel As MSForms.CommandButton
 Private m_txtExportPath As MSForms.TextBox
 Private m_txtDays As MSForms.TextBox
 Private m_lblStatus As MSForms.Label
+Private m_lblProgress As MSForms.Label
 
 Private m_folderPaths As Collection  ' FolderPath strings for each combo item
 Private m_mode As String  ' "setup" or "export"
@@ -89,6 +90,9 @@ Private Sub BuildLayout()
     AddLabel Me, "lblDaysHint", inputL + 68, y, 120, "0 = no limit"
     y = y + ROW_H + 4
 
+    Set m_lblProgress = AddLabel(Me, "lblProgress", M, ch - 72, cw - M * 2, "")
+    m_lblProgress.Height = 14
+    m_lblProgress.ForeColor = RGB(100, 100, 100)
     Set m_lblStatus = AddLabel(Me, "lblStatus", M, ch - 56, cw - M * 2, "")
     m_lblStatus.Height = 16
 
@@ -146,15 +150,49 @@ End Function
 ' Data loading
 ' ============================================================================
 
+' Progress callback from FolioMailExport
+Public Sub OnExportProgress(ByVal count As Long, ByVal subject As String)
+    On Error Resume Next
+    If Not m_lblProgress Is Nothing Then
+        m_lblProgress.Caption = "  " & count & " exported: " & Left$(subject, 40)
+    End If
+    DoEvents
+    On Error GoTo 0
+End Sub
+
 Private Sub LoadAccounts()
     m_cmbAccount.Clear
     m_cmbAccount.AddItem "(All)"
+    ' List personal accounts
     Dim acct As Outlook.Account
     For Each acct In Application.Session.Accounts
         If Len(acct.SmtpAddress) > 0 Then
             m_cmbAccount.AddItem acct.SmtpAddress
         End If
     Next acct
+    ' List shared mailboxes (stores not linked to a personal account)
+    Dim store As Outlook.Store
+    Dim knownStoreIds As Object: Set knownStoreIds = CreateObject("Scripting.Dictionary")
+    For Each acct In Application.Session.Accounts
+        On Error Resume Next
+        If Not acct.DeliveryStore Is Nothing Then
+            knownStoreIds(acct.DeliveryStore.StoreID) = True
+        End If
+        On Error GoTo 0
+    Next acct
+    For Each store In Application.Session.Stores
+        On Error Resume Next
+        If Not knownStoreIds.Exists(store.StoreID) Then
+            Dim storeAddr As String
+            storeAddr = LCase$(store.GetRootFolder.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x39FE001E"))
+            If Len(storeAddr) > 0 Then
+                m_cmbAccount.AddItem storeAddr & " (shared)"
+            ElseIf Len(store.DisplayName) > 0 Then
+                m_cmbAccount.AddItem store.DisplayName & " (shared)"
+            End If
+        End If
+        On Error GoTo 0
+    Next store
     m_cmbAccount.ListIndex = 0
 End Sub
 
@@ -348,11 +386,17 @@ Private Sub m_cmdOK_Click()
 
         m_cmdOK.Enabled = False
         m_lblStatus.Caption = "Exporting..."
+        m_lblProgress.Caption = ""
         DoEvents
+
+        ' Set progress callback
+        Set FolioMailExport.g_progressCallback = Me
 
         Dim count As Long
         count = FolioMailExport.RunExport(exportRoot, days, acct, folderPath)
 
+        Set FolioMailExport.g_progressCallback = Nothing
+        m_lblProgress.Caption = ""
         m_lblStatus.Caption = "Done: " & count & " mail(s) exported."
         m_cmdOK.Enabled = True
     End If

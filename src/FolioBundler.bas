@@ -146,7 +146,7 @@ NextComp:
     lines.Add ""
     lines.Add "    ' Create hidden sheets"
     lines.Add "    EnsureConfigSheet ""_folio_config"", Array(""key"", ""value"")"
-    lines.Add "    EnsureConfigSheet ""_folio_sources"", Array(""source_name"", ""key_column"", ""display_name_column"", ""mail_link_column"", ""folder_link_column"")"
+    lines.Add "    EnsureConfigSheet ""_folio_sources"", Array(""source_name"", ""key_column"", ""display_name_column"", ""mail_link_column"", ""folder_link_column"", ""mail_match_mode"")"
     lines.Add "    EnsureConfigSheet ""_folio_fields"", Array(""source_name"", ""field_name"", ""type"", ""in_list"", ""editable"", ""multiline"")"
     lines.Add "    EnsureConfigSheet ""_folio_log"", Array(""timestamp"", ""source"", ""key"", ""field"", ""old_value"", ""new_value"", ""origin"")"
     lines.Add ""

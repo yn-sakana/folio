@@ -218,6 +218,12 @@ Public Function FindJoinedRecords(records As Collection, keyField As String, key
     Set FindJoinedRecords = New Collection
     If records Is Nothing Then eh.OK: Exit Function
     If Len(keyValue) = 0 Then eh.OK: Exit Function
+
+    ' Pre-split semicolon-separated key values for multi-address matching
+    Dim keyParts() As String: keyParts = Split(keyValue, ";")
+    Dim kp As Long
+    For kp = 0 To UBound(keyParts): keyParts(kp) = Trim$(keyParts(kp)): Next kp
+
     Dim i As Long
     For i = 1 To records.Count
         Dim rec As Object: Set rec = records(i)
@@ -226,16 +232,32 @@ Public Function FindJoinedRecords(records As Collection, keyField As String, key
         Dim fv As String
         If IsNull(rec(keyField)) Then GoTo NextRec
         fv = CStr(rec(keyField))
+
+        Dim matched As Boolean: matched = False
         Select Case matchMode
             Case "domain"
-                If LCase$(GetDomain(fv)) = LCase$(GetDomain(keyValue)) Then
-                    FindJoinedRecords.Add rec
-                End If
+                ' Match if any key part's domain matches the record's domain
+                Dim fvDomain As String: fvDomain = LCase$(GetDomain(fv))
+                For kp = 0 To UBound(keyParts)
+                    If Len(keyParts(kp)) > 0 Then
+                        If fvDomain = LCase$(GetDomain(keyParts(kp))) Then matched = True: Exit For
+                    End If
+                Next kp
+            Case "prefix"
+                ' Match by prefix before "_" (e.g. folder "001_Tokyo" matches key "001")
+                Dim baseId As String: baseId = fv
+                Dim usPos As Long: usPos = InStr(fv, "_")
+                If usPos > 0 Then baseId = Left$(fv, usPos - 1)
+                If LCase$(baseId) = LCase$(keyValue) Then matched = True
             Case Else ' exact
-                If LCase$(fv) = LCase$(keyValue) Then
-                    FindJoinedRecords.Add rec
-                End If
+                ' Match any key part exactly
+                For kp = 0 To UBound(keyParts)
+                    If Len(keyParts(kp)) > 0 Then
+                        If LCase$(fv) = LCase$(keyParts(kp)) Then matched = True: Exit For
+                    End If
+                Next kp
         End Select
+        If matched Then FindJoinedRecords.Add rec
 NextRec:
     Next i
     eh.OK: Exit Function
