@@ -670,6 +670,21 @@ Public Function GetCaseFiles() As Object
     Set GetCaseFiles = m_caseFiles
 End Function
 
+' Return raw TSV lines array and count (avoids Join/Split roundtrip)
+Public Sub GetCaseFileLines(ByRef outLines() As String, ByRef outCount As Long)
+    outCount = 0
+    If m_caseFileLinesCount = 0 Then Exit Sub
+    ' Compact: copy non-empty lines
+    ReDim outLines(0 To m_caseFileLinesCount - 1)
+    Dim i As Long
+    For i = 0 To m_caseFileLinesCount - 1
+        If Len(m_caseFileLines(i)) > 0 Then
+            outLines(outCount) = m_caseFileLines(i)
+            outCount = outCount + 1
+        End If
+    Next i
+End Sub
+
 ' Return compacted TSV content for case files (skips empty lines from removals)
 Public Function GetCaseFilesTsvContent() As String
     If m_caseFileLinesCount = 0 Then GetCaseFilesTsvContent = "": Exit Function
@@ -707,7 +722,255 @@ Public Sub ClearDiffs()
 End Sub
 
 ' ============================================================================
-' FE: TSV Cache Loading (reads files written by FolioWorker)
+' FE: Load data from BE workbook sheets (Range.Value one-shot read)
+' ============================================================================
+
+Public Sub LoadFromSheets(beWb As Workbook)
+    On Error Resume Next
+    LoadMailFromSheet beWb
+    LoadMailIndexFromSheet beWb
+    LoadCasesFromSheet beWb
+    LoadCaseFilesFromSheet beWb
+    On Error GoTo 0
+End Sub
+
+' Load from FE's own local sheets (no cross-process)
+Public Sub LoadFromLocalSheets(wb As Workbook)
+    On Error Resume Next
+    Dim ws As Worksheet
+
+    Set ws = wb.Worksheets("_folio_mail")
+    If Not ws Is Nothing Then LoadMailFromLocalSheet wb
+
+    Set ws = wb.Worksheets("_folio_mail_idx")
+    If Not ws Is Nothing Then LoadMailIndexFromLocalSheet wb
+
+    Set ws = wb.Worksheets("_folio_cases")
+    If Not ws Is Nothing Then LoadCasesFromLocalSheet wb
+
+    Set ws = wb.Worksheets("_folio_files")
+    If Not ws Is Nothing Then LoadCaseFilesFromLocalSheet wb
+    On Error GoTo 0
+End Sub
+
+Private Sub LoadMailFromLocalSheet(wb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = wb.Worksheets("_folio_mail")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+    Dim newRecs As Object: Set newRecs = FolioHelpers.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim eid As String: eid = CStr(data(i, 1))
+        If Len(eid) = 0 Then GoTo NextLMail
+        Dim rec As Object: Set rec = FolioHelpers.NewDict()
+        rec.Add "entry_id", eid
+        rec.Add "sender_email", CStr(data(i, 2))
+        rec.Add "sender_name", CStr(data(i, 3))
+        rec.Add "subject", CStr(data(i, 4))
+        rec.Add "received_at", CStr(data(i, 5))
+        rec.Add "folder_path", CStr(data(i, 6))
+        rec.Add "body_path", CStr(data(i, 7))
+        rec.Add "msg_path", CStr(data(i, 8))
+        Dim attDict As Object: Set attDict = FolioHelpers.NewDict()
+        Dim attStr As String: attStr = CStr(data(i, 9))
+        If Len(attStr) > 0 Then
+            Dim attParts() As String: attParts = Split(attStr, "|")
+            Dim a As Long
+            For a = 0 To UBound(attParts)
+                If Len(attParts(a)) > 0 Then
+                    Dim fn As String: fn = Mid$(attParts(a), InStrRev(attParts(a), "\") + 1)
+                    attDict.Add attParts(a), fn
+                End If
+            Next a
+        End If
+        rec.Add "attachment_paths", attDict
+        rec.Add "_mail_folder", CStr(data(i, 10))
+        Set newRecs(eid) = rec
+NextLMail:
+    Next i
+    Set m_feMailRecords = newRecs
+    Exit Sub
+ErrOut:
+End Sub
+
+Private Sub LoadMailIndexFromLocalSheet(wb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = wb.Worksheets("_folio_mail_idx")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+    Dim newIdx As Object: Set newIdx = FolioHelpers.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim key As String: key = CStr(data(i, 1))
+        If Len(key) = 0 Then GoTo NextLIdx
+        If Not newIdx.Exists(key) Then newIdx.Add key, FolioHelpers.NewDict()
+        Dim inner As Object: Set inner = newIdx(key)
+        inner(CStr(data(i, 2))) = True
+NextLIdx:
+    Next i
+    Set m_feMailIndex = newIdx
+    Exit Sub
+ErrOut:
+End Sub
+
+Private Sub LoadCasesFromLocalSheet(wb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = wb.Worksheets("_folio_cases")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+    Dim newNames As Object: Set newNames = FolioHelpers.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim nm As String: nm = CStr(data(i, 1))
+        If Len(nm) > 0 Then newNames(nm) = True
+    Next i
+    Set m_feCaseNames = newNames
+    Exit Sub
+ErrOut:
+End Sub
+
+Private Sub LoadCaseFilesFromLocalSheet(wb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = wb.Worksheets("_folio_files")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+    Dim newFiles As Object: Set newFiles = FolioHelpers.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        If UBound(data, 2) < 7 Then GoTo NextLCF
+        Dim rec As Object: Set rec = FolioHelpers.NewDict()
+        rec.Add "case_id", CStr(data(i, 1))
+        rec.Add "file_name", CStr(data(i, 2))
+        rec.Add "file_path", CStr(data(i, 3))
+        rec.Add "folder_path", CStr(data(i, 4))
+        rec.Add "relative_path", CStr(data(i, 5))
+        rec.Add "file_size", CStr(data(i, 6))
+        rec.Add "modified_at", CStr(data(i, 7))
+        Set newFiles(CStr(data(i, 3))) = rec
+NextLCF:
+    Next i
+    Set m_feCaseFiles = newFiles
+    Exit Sub
+ErrOut:
+End Sub
+
+Private Sub LoadMailFromSheet(beWb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = beWb.Worksheets("_mail")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+
+    Dim newRecs As Object: Set newRecs = FolioHelpers.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim eid As String: eid = CStr(data(i, 1))
+        If Len(eid) = 0 Then GoTo NextMailRow
+        Dim rec As Object: Set rec = FolioHelpers.NewDict()
+        rec.Add "entry_id", eid
+        rec.Add "sender_email", CStr(data(i, 2))
+        rec.Add "sender_name", CStr(data(i, 3))
+        rec.Add "subject", CStr(data(i, 4))
+        rec.Add "received_at", CStr(data(i, 5))
+        rec.Add "folder_path", CStr(data(i, 6))
+        rec.Add "body_path", CStr(data(i, 7))
+        rec.Add "msg_path", CStr(data(i, 8))
+        Dim attDict As Object: Set attDict = FolioHelpers.NewDict()
+        Dim attStr As String: attStr = CStr(data(i, 9))
+        If Len(attStr) > 0 Then
+            Dim attParts() As String: attParts = Split(attStr, "|")
+            Dim a As Long
+            For a = 0 To UBound(attParts)
+                If Len(attParts(a)) > 0 Then
+                    Dim fn As String: fn = Mid$(attParts(a), InStrRev(attParts(a), "\") + 1)
+                    attDict.Add attParts(a), fn
+                End If
+            Next a
+        End If
+        rec.Add "attachment_paths", attDict
+        rec.Add "_mail_folder", CStr(data(i, 10))
+        Set newRecs(eid) = rec
+NextMailRow:
+    Next i
+    Set m_feMailRecords = newRecs
+    Exit Sub
+ErrOut:
+End Sub
+
+Private Sub LoadMailIndexFromSheet(beWb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = beWb.Worksheets("_mail_index")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+
+    Dim newIdx As Object: Set newIdx = FolioHelpers.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim key As String: key = CStr(data(i, 1))
+        If Len(key) = 0 Then GoTo NextIdxRow
+        If Not newIdx.Exists(key) Then newIdx.Add key, FolioHelpers.NewDict()
+        Dim inner As Object: Set inner = newIdx(key)
+        inner(CStr(data(i, 2))) = True
+NextIdxRow:
+    Next i
+    Set m_feMailIndex = newIdx
+    Exit Sub
+ErrOut:
+End Sub
+
+Private Sub LoadCasesFromSheet(beWb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = beWb.Worksheets("_cases")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+
+    Dim newNames As Object: Set newNames = FolioHelpers.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim nm As String: nm = CStr(data(i, 1))
+        If Len(nm) > 0 Then newNames(nm) = True
+    Next i
+    Set m_feCaseNames = newNames
+    Exit Sub
+ErrOut:
+End Sub
+
+Private Sub LoadCaseFilesFromSheet(beWb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = beWb.Worksheets("_case_files")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+
+    Dim newFiles As Object: Set newFiles = FolioHelpers.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        If UBound(data, 2) < 7 Then GoTo NextCFRow
+        Dim rec As Object: Set rec = FolioHelpers.NewDict()
+        rec.Add "case_id", CStr(data(i, 1))
+        rec.Add "file_name", CStr(data(i, 2))
+        rec.Add "file_path", CStr(data(i, 3))
+        rec.Add "folder_path", CStr(data(i, 4))
+        rec.Add "relative_path", CStr(data(i, 5))
+        rec.Add "file_size", CStr(data(i, 6))
+        rec.Add "modified_at", CStr(data(i, 7))
+        Set newFiles(CStr(data(i, 3))) = rec
+NextCFRow:
+    Next i
+    Set m_feCaseFiles = newFiles
+    Exit Sub
+ErrOut:
+End Sub
+
+' ============================================================================
+' FE: TSV Cache Loading (legacy fallback)
 ' ============================================================================
 
 Private Function GetFECacheFolder() As String

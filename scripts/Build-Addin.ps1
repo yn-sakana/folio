@@ -121,7 +121,7 @@ try {
         $codeMod.AddFromString($code)
     }
 
-    $thisWorkbookCode = @"
+    $thisWorkbookCode = @'
 Option Explicit
 
 Private Sub Workbook_BeforeClose(Cancel As Boolean)
@@ -129,7 +129,15 @@ Private Sub Workbook_BeforeClose(Cancel As Boolean)
     FolioMain.BeforeWorkbookClose
     Me.Saved = True
 End Sub
-"@
+
+Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
+    On Error Resume Next
+    If Not FolioMain.g_formLoaded Then Exit Sub
+    Dim sn As String: sn = Sh.Name
+    If Left$(sn, 6) = "_folio" Then frmFolio.OnFolioSheetChange sn
+    On Error GoTo 0
+End Sub
+'@
     $docComp = $vbProj.VBComponents.Item('ThisWorkbook')
     $docCode = $docComp.CodeModule
     if ($docCode.CountOfLines -gt 0) { $docCode.DeleteLines(1, $docCode.CountOfLines) }

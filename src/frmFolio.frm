@@ -52,14 +52,13 @@ Private m_fieldEditors As Collection
 Private m_matchedMails As Object    ' Dict from FindMailRecords
 Private m_matchedMailArr As Variant ' = m_matchedMails.Items (for indexed access)
 Private m_watcher As SheetWatcher
-Private m_workerInitialLoad As Boolean
-Private m_workerLastVersion As Long
 Private m_workerPending As Boolean
 Private m_pendingMailFolder As String
 Private m_pendingCaseRoot As String
 Private m_pendingMatchField As String
 Private m_pendingMatchMode As String
-Private m_inPoll As Boolean
+Private m_workerLastVersion As Long
+Private m_workerReady As Boolean
 Private m_fileTreeItems As Collection
 Private m_undoStack As Collection
 Private m_filterConditions As Collection
@@ -121,7 +120,8 @@ Private Sub UserForm_Initialize()
     m_txtFilter.Text = FolioConfig.GetStr("search_text")
 
     m_lastWidth = Me.Width: m_lastHeight = Me.Height
-    FolioMain.StartPolling
+    ' Deferred worker startup (after UI is visible)
+    Application.OnTime Now, "FolioMain.DeferredStartup"
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -531,10 +531,10 @@ Private Sub SwitchSource(sourceName As String)
     If Len(mailMatchField) = 0 Then mailMatchField = "sender_email"
     Dim mailMatchMode As String: mailMatchMode = FolioConfig.GetSourceStr(sourceName, "mail_match_mode", "exact")
 
-    ' Worker startup is deferred to DoPollCycle so UI shows immediately
-    m_workerInitialLoad = False
-    m_workerLastVersion = 0
+    ' Worker startup deferred — starts after UI is visible
     m_workerPending = True
+    m_workerLastVersion = 0
+    m_workerReady = False
     m_pendingMailFolder = mailFolder
     m_pendingCaseRoot = caseRoot
     m_pendingMatchField = mailMatchField
@@ -1317,51 +1317,86 @@ End Sub
 ' Worker Signal (via _signal.txt file polling)
 ' ============================================================================
 
-Private Sub CheckWorkerSignal()
-    If m_loading Then Exit Sub
-    On Error GoTo SignalExit
+' ============================================================================
+' Worker SheetChange callback (called by WorkerWatcher)
+' ============================================================================
 
-    Dim changed As Boolean: changed = FolioData.LoadCacheIfChanged()
-    If Not changed Then Exit Sub
+' ============================================================================
+' Worksheet_Change handler — called when BE writes to FE's hidden sheets
+' All reads are LOCAL (no cross-process). Returns fast.
+' ============================================================================
 
-    m_workerLastVersion = FolioData.GetFELastVersion()
+Public Sub OnFolioSheetChange(sheetName As String)
+    On Error Resume Next
+    Select Case sheetName
+        Case "_folio_signal"
+            ' Clock: use FE's own time (SheetChange = BE is alive)
+            If Not m_lblClock Is Nothing Then m_lblClock.Caption = Format$(Now, "hh:nn:ss")
+            ' Version from local sheet
+            Dim sigSh As Worksheet: Set sigSh = ThisWorkbook.Worksheets("_folio_signal")
+            Dim ver As Long: ver = 0
+            On Error Resume Next: ver = CLng(sigSh.Range("B1").Value): On Error GoTo 0
+            If ver > 0 And ver <> m_workerLastVersion Then
+                m_workerLastVersion = ver
+                LoadDataFromLocalSheets
+            End If
 
-    If Not m_workerInitialLoad Then
-        m_workerInitialLoad = True
-    End If
-
-    ' Log diff entries from BE
-    LogWorkerDiffs
-
-    ' Build tabs if they don't exist yet
-    If m_mailPageIdx < 0 Or m_filesPageIdx < 0 Then BuildJoinedTabs
-
-    ' Refresh current record's tabs
-    If m_currentRecIdx > 0 Then
-        On Error Resume Next
-        UpdateMailTab
-        UpdateFilesTab
-        On Error GoTo 0
-    End If
-
-SignalExit:
+        Case "_folio_diff"
+            ' Diff log from local sheet
+            LogDiffsFromSheet
+    End Select
+    On Error GoTo 0
 End Sub
 
-Private Sub LogWorkerDiffs()
-    On Error GoTo DiffExit
-    Dim diffs As Collection: Set diffs = FolioData.GetFEDiffs()
-    If diffs.Count = 0 Then Exit Sub
+Private Sub LoadDataFromLocalSheets()
+    On Error Resume Next
+    FolioData.LoadFromLocalSheets ThisWorkbook
 
-    ' Batch write to persistent changelog (single Range.Value operation)
+    If Not m_workerReady Then
+        m_workerReady = True
+        If m_mailPageIdx < 0 Or m_filesPageIdx < 0 Then BuildJoinedTabs
+    End If
+
+    If Not m_lblStatus Is Nothing Then
+        m_lblStatus.Caption = "  Active (v" & m_workerLastVersion & _
+            " mail:" & FolioData.GetMailCount() & " cases:" & FolioData.GetCaseCount() & ")"
+    End If
+
+    If m_currentRecIdx > 0 Then
+        UpdateMailTab
+        UpdateFilesTab
+    End If
+    On Error GoTo 0
+End Sub
+
+Private Sub LogDiffsFromSheet()
+    On Error GoTo DiffExit
+    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets("_folio_diff")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+
+    Dim diffs As New Collection
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        If Len(CStr(data(i, 1))) = 0 Then GoTo NextDiff
+        Dim d As Object: Set d = FolioHelpers.NewDict()
+        d.Add "action", CStr(data(i, 1))
+        d.Add "type", CStr(data(i, 2))
+        d.Add "id", CStr(data(i, 3))
+        d.Add "description", CStr(data(i, 4))
+        diffs.Add d
+NextDiff:
+    Next i
+
+    If diffs.Count = 0 Then Exit Sub
     FolioChangeLog.AddLogEntries diffs
 
-    ' Display in log ListBox
-    Dim i As Long
     For i = 1 To diffs.Count
-        Dim d As Object: Set d = diffs(i)
-        Dim action As String: action = FolioHelpers.DictStr(d, "action")
-        Dim dtype As String: dtype = FolioHelpers.DictStr(d, "type")
-        Dim desc As String: desc = FolioHelpers.DictStr(d, "description")
+        Dim de As Object: Set de = diffs(i)
+        Dim action As String: action = FolioHelpers.DictStr(de, "action")
+        Dim dtype As String: dtype = FolioHelpers.DictStr(de, "type")
+        Dim desc As String: desc = FolioHelpers.DictStr(de, "description")
         Dim prefix As String
         If action = "added" Then prefix = "+" Else prefix = "-"
         Dim line As String
@@ -1377,53 +1412,18 @@ DiffExit:
 End Sub
 
 ' ============================================================================
-' Poll Cycle
+' Deferred Worker Startup
 ' ============================================================================
 
 Public Sub DoPollCycle()
-    If Not FolioMain.g_pollActive Then Exit Sub
-    If m_inPoll Then Exit Sub
-    m_inPoll = True
-    On Error GoTo PollExit
-    If Me.Width <> m_lastWidth Or Me.Height <> m_lastHeight Then
-        m_lastWidth = Me.Width: m_lastHeight = Me.Height
-        RepositionControls
-    End If
-    If Not m_lblClock Is Nothing Then m_lblClock.Caption = Format$(Now, "hh:nn:ss")
-
-    ' Deferred worker startup (runs after UI is visible)
-    If m_workerPending Then
-        m_workerPending = False
-        If Not m_lblStatus Is Nothing Then m_lblStatus.Caption = "  Backend: starting..."
-        DoEvents  ' Let UI paint before blocking on CreateObject
-        StartWorkerDeferred
-    End If
-
-    ' Poll for worker signal changes (TSV file based)
-    If Not FolioMain.g_workerApp Is Nothing Then CheckWorkerSignal
-
-    ' Worker status display
-    If Not m_lblStatus Is Nothing Then
-        If FolioMain.g_workerApp Is Nothing Then
-            If Not m_workerPending Then m_lblStatus.Caption = "  Backend: stopped"
-        ElseIf Not m_workerInitialLoad Then
-            m_lblStatus.Caption = "  Backend: loading..."
-        Else
-            m_lblStatus.Caption = "  Backend: active (v" & m_workerLastVersion & _
-                " mail:" & FolioData.GetMailCount() & " cases:" & FolioData.GetCaseCount() & ")"
-        End If
-    End If
-PollExit:
-    m_inPoll = False
-End Sub
-
-Private Sub StartWorkerDeferred()
+    If Not m_workerPending Then Exit Sub
+    m_workerPending = False
     On Error Resume Next
+    If Not m_lblStatus Is Nothing Then m_lblStatus.Caption = "  Starting..."
+    DoEvents
     If FolioMain.g_workerApp Is Nothing Then
-        FolioData.ClearFECache
         FolioMain.StartWorker m_pendingMailFolder, m_pendingCaseRoot, m_pendingMatchField, m_pendingMatchMode
     Else
-        FolioData.ClearFECache
         FolioMain.g_workerApp.Run "FolioWorker.UpdateConfig", _
             m_pendingMailFolder, m_pendingCaseRoot, m_pendingMatchField, m_pendingMatchMode
     End If
@@ -1606,7 +1606,6 @@ Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "QueryClose"
     On Error GoTo ErrHandler
     FolioMain.g_formLoaded = False
-    FolioMain.StopPolling
 
     If FolioMain.g_forceClose Then
         CleanupRefs

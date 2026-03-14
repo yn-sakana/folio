@@ -4,53 +4,38 @@ Option Explicit
 ' ============================================================================
 ' FolioWorker - Background scanning module
 ' Runs in a separate Excel.Application instance (Visible=False).
-' Scans mail/case folders via FolioData, writes results to TSV cache files,
-' and signals the frontend via _signal.txt (FE polls every 1 second).
+' Scans mail/case folders, writes results directly to FE's hidden sheets.
+' FE's Worksheet_Change fires on write (no polling needed).
 ' ============================================================================
 
 Private g_active As Boolean
 Private g_scheduled As Boolean
 Private g_nextPollAt As Date
+Private g_clockScheduled As Boolean
+Private g_nextClockAt As Date
 
 Private g_mailFolder As String
 Private g_caseRoot As String
-
-Private g_cacheFolder As String
 Private g_signalVersion As Long
+Private g_feWb As Object  ' Reference to FE's workbook (cross-process)
 
 ' ============================================================================
-' Entry Point (called by FE via xlApp.Run)
+' Entry Point
 ' ============================================================================
 
 Public Sub WorkerEntryPoint(mailFolder As String, caseRoot As String, _
-                            matchField As String, matchMode As String)
+                            matchField As String, matchMode As String, _
+                            feWorkbook As Object)
     Dim eh As New ErrorHandler: eh.Enter "FolioWorker", "EntryPoint"
     On Error GoTo ErrHandler
 
     g_mailFolder = mailFolder
     g_caseRoot = caseRoot
-
-    ' Configure mail search index
+    Set g_feWb = feWorkbook
     FolioData.SetMailMatchConfig matchField, matchMode
+    Application.EnableEvents = True
 
-    ' Ensure cache folder exists
-    EnsureCacheFolder
-
-    ' Resume from existing signal version (prevents reset on BE restart)
     g_signalVersion = 0
-    On Error Resume Next
-    Dim sigPath As String: sigPath = g_cacheFolder & "_signal.txt"
-    If Len(Dir$(sigPath)) > 0 Then
-        Dim sf As Long: sf = FreeFile
-        Dim sv As String
-        Open sigPath For Input As #sf
-        Line Input #sf, sv
-        Close #sf
-        If Len(sv) > 0 Then g_signalVersion = Abs(CLng(Trim$(sv)))
-    End If
-    On Error GoTo 0
-
-    ' Return immediately — initial scan runs async via OnTime
     g_active = True
     Application.OnTime Now, "FolioWorker.WorkerInitialScan"
 
@@ -58,7 +43,10 @@ Public Sub WorkerEntryPoint(mailFolder As String, caseRoot As String, _
 ErrHandler: eh.Catch
 End Sub
 
-' Initial full scan (runs async via OnTime, does not block FE)
+' ============================================================================
+' Initial full scan
+' ============================================================================
+
 Public Sub WorkerInitialScan()
     If Not g_active Then Exit Sub
     On Error Resume Next
@@ -72,23 +60,35 @@ Public Sub WorkerInitialScan()
     End If
     Dim t2 As Single: t2 = Timer
 
-    WriteMailTsv
-    WriteMailIndexTsv
-    WriteCasesTsv
-    WriteCaseFilesTsv
-    WriteDiffTsv
+    ' Write all data to FE sheets (profiled)
+    Dim tw0 As Single: tw0 = Timer
+    WriteMailToFE
+    Dim tw1 As Single: tw1 = Timer
+    WriteMailIndexToFE
+    Dim tw2 As Single: tw2 = Timer
+    WriteCasesToFE
+    Dim tw3 As Single: tw3 = Timer
+    WriteCaseFilesToFE
+    Dim tw4 As Single: tw4 = Timer
+    WriteDiffToFE
     FolioData.ClearDiffs
-    BumpSignal
-    Dim t3 As Single: t3 = Timer
-    LogTiming "initial mail=" & Format$(t1 - t0, "0.000") & "s case=" & Format$(t2 - t1, "0.000") & "s write=" & Format$(t3 - t2, "0.000") & "s"
+    g_signalVersion = 1
+    Dim tw5 As Single: tw5 = Timer
+    WriteSignalToFE g_signalVersion, "scan mail=" & Format$(t1 - t0, "0.000") & _
+        " case=" & Format$(t2 - t1, "0.000") & _
+        " | write mail=" & Format$(tw1 - tw0, "0.000") & _
+        " idx=" & Format$(tw2 - tw1, "0.000") & _
+        " cases=" & Format$(tw3 - tw2, "0.000") & _
+        " files=" & Format$(tw4 - tw3, "0.000") & _
+        " diff=" & Format$(tw5 - tw4, "0.000") & _
+        " total=" & Format$(tw5 - tw0, "0.000")
 
-    ' Start polling loop
     ScheduleNextPoll
     On Error GoTo 0
 End Sub
 
 ' ============================================================================
-' Poll Loop (5s via Application.OnTime)
+' Poll Loop (1s)
 ' ============================================================================
 
 Public Sub WorkerPollCallback()
@@ -96,42 +96,29 @@ Public Sub WorkerPollCallback()
     If Not g_active Then Exit Sub
     On Error Resume Next
 
-    Dim t0 As Single: t0 = Timer
-    Dim mailChanged As Boolean
-    Dim caseChanged As Boolean
-    Dim filesChanged As Boolean
-
+    Dim mailChanged As Boolean, caseChanged As Boolean, filesChanged As Boolean
     If Len(g_mailFolder) > 0 Then mailChanged = FolioData.RefreshMailData(g_mailFolder)
-    Dim t1 As Single: t1 = Timer
     If Len(g_caseRoot) > 0 Then
         caseChanged = FolioData.RefreshCaseNames(g_caseRoot)
         filesChanged = FolioData.RefreshCaseFiles(g_caseRoot)
     End If
-    Dim t2 As Single: t2 = Timer
-    LogTiming "poll mail=" & Format$(t1 - t0, "0.000") & "s case=" & Format$(t2 - t1, "0.000") & "s" & _
-        " changed=" & mailChanged & "/" & caseChanged & "/" & filesChanged
 
     If mailChanged Or caseChanged Or filesChanged Then
-        ' 2-phase commit: negative version = writing
         g_signalVersion = g_signalVersion + 1
-        WriteSignalFile -g_signalVersion  ' Phase 1: mark as writing
-
-        If mailChanged Then WriteMailTsv: WriteMailIndexTsv
-        If caseChanged Then WriteCasesTsv
-        If filesChanged Then WriteCaseFilesTsv
-        WriteDiffTsv
-        FolioData.ClearDiffs  ' Prevent stale diffs from being re-written
-
-        WriteSignalFile g_signalVersion   ' Phase 2: commit
+        If mailChanged Then WriteMailToFE: WriteMailIndexToFE
+        If caseChanged Then WriteCasesToFE
+        If filesChanged Then WriteCaseFilesToFE
+        WriteDiffToFE
+        FolioData.ClearDiffs
+        WriteVersionToFE g_signalVersion
     End If
 
-    ' Reschedule
     If g_active Then ScheduleNextPoll
     On Error GoTo 0
 End Sub
 
 ' ============================================================================
-' Config Update (called by FE on source switch)
+' Config Update
 ' ============================================================================
 
 Public Sub UpdateConfig(mailFolder As String, caseRoot As String, _
@@ -144,30 +131,27 @@ Public Sub UpdateConfig(mailFolder As String, caseRoot As String, _
     FolioData.ClearCache
     FolioData.SetMailMatchConfig matchField, matchMode
 
-    ' Full rescan
     If Len(g_mailFolder) > 0 Then FolioData.RefreshMailData g_mailFolder
     If Len(g_caseRoot) > 0 Then
         FolioData.RefreshCaseNames g_caseRoot
         FolioData.RefreshCaseFiles g_caseRoot
     End If
 
-    ' Rewrite all cache files
     g_signalVersion = g_signalVersion + 1
-    WriteSignalFile -g_signalVersion
-    WriteMailTsv
-    WriteMailIndexTsv
-    WriteCasesTsv
-    WriteCaseFilesTsv
-    WriteDiffTsv
+    WriteMailToFE
+    WriteMailIndexToFE
+    WriteCasesToFE
+    WriteCaseFilesToFE
+    WriteDiffToFE
     FolioData.ClearDiffs
-    WriteSignalFile g_signalVersion
+    WriteVersionToFE g_signalVersion
 
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
 
 ' ============================================================================
-' Stop (called by FE before Quit)
+' Stop
 ' ============================================================================
 
 Public Sub WorkerStop()
@@ -177,43 +161,48 @@ Public Sub WorkerStop()
         Application.OnTime g_nextPollAt, "FolioWorker.WorkerPollCallback", , False
     End If
     g_scheduled = False
+    If g_clockScheduled Then
+        Application.OnTime g_nextClockAt, "FolioWorker.ClockCallback", , False
+    End If
+    g_clockScheduled = False
+    Set g_feWb = Nothing
     On Error GoTo 0
 End Sub
 
 ' ============================================================================
-' Cache Folder
+' FE Sheet Writers (.Value=.Value to FE's workbook)
 ' ============================================================================
 
-Private Sub EnsureCacheFolder()
-    g_cacheFolder = ThisWorkbook.path & "\.folio_cache\"
-    FolioHelpers.EnsureFolder Left$(g_cacheFolder, Len(g_cacheFolder) - 1)
-End Sub
-
-' ============================================================================
-' TSV File Writers
-' ============================================================================
-
-Private Function SanitizeTsvField(ByVal s As String) As String
-    s = Replace(s, vbTab, " ")
-    s = Replace(s, vbCr, " ")
-    s = Replace(s, vbLf, " ")
-    SanitizeTsvField = s
+Private Function FESheet(shName As String) As Object
+    If g_feWb Is Nothing Then Exit Function
+    On Error Resume Next
+    Set FESheet = g_feWb.Worksheets(shName)
+    On Error GoTo 0
 End Function
 
-Private Sub WriteCacheFile(fileName As String, content As String)
-    FolioHelpers.WriteTextFile g_cacheFolder & fileName, content
-End Sub
+Private Sub WriteMailToFE()
+    Dim ws As Object: Set ws = FESheet("_folio_mail")
+    If ws Is Nothing Then Exit Sub
+    ws.UsedRange.ClearContents
 
-Private Sub WriteMailTsv()
     Dim records As Object: Set records = FolioData.GetMailRecords()
-    If records Is Nothing Then WriteCacheFile "_mail.tsv", "": Exit Sub
-    If records.Count = 0 Then WriteCacheFile "_mail.tsv", "": Exit Sub
+    If records Is Nothing Then Exit Sub
+    If records.Count = 0 Then Exit Sub
 
     Dim keys As Variant: keys = records.keys
-    Dim lines() As String: ReDim lines(0 To UBound(keys))
+    Dim n As Long: n = UBound(keys) + 1
+    Dim data() As Variant: ReDim data(1 To n, 1 To 10)
     Dim i As Long
     For i = 0 To UBound(keys)
         Dim rec As Object: Set rec = records(keys(i))
+        data(i + 1, 1) = FolioHelpers.DictStr(rec, "entry_id")
+        data(i + 1, 2) = FolioHelpers.DictStr(rec, "sender_email")
+        data(i + 1, 3) = FolioHelpers.DictStr(rec, "sender_name")
+        data(i + 1, 4) = FolioHelpers.DictStr(rec, "subject")
+        data(i + 1, 5) = FolioHelpers.DictStr(rec, "received_at")
+        data(i + 1, 6) = FolioHelpers.DictStr(rec, "folder_path")
+        data(i + 1, 7) = FolioHelpers.DictStr(rec, "body_path")
+        data(i + 1, 8) = FolioHelpers.DictStr(rec, "msg_path")
         Dim attStr As String: attStr = ""
         If rec.Exists("attachment_paths") Then
             If IsObject(rec("attachment_paths")) Then
@@ -227,154 +216,175 @@ Private Sub WriteMailTsv()
                 End If
             End If
         End If
-        lines(i) = SanitizeTsvField(FolioHelpers.DictStr(rec, "entry_id")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "sender_email")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "sender_name")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "subject")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "received_at")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "folder_path")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "body_path")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "msg_path")) & vbTab _
-            & attStr & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "_mail_folder"))
+        data(i + 1, 9) = attStr
+        data(i + 1, 10) = FolioHelpers.DictStr(rec, "_mail_folder")
     Next i
-    WriteCacheFile "_mail.tsv", Join(lines, vbLf)
+    ws.Range("A1").Resize(n, 10).Value = data
 End Sub
 
-Private Sub WriteMailIndexTsv()
-    Dim idx As Object: Set idx = FolioData.GetMailIndex()
-    If idx Is Nothing Then WriteCacheFile "_mail_index.tsv", "": Exit Sub
-    If idx.Count = 0 Then WriteCacheFile "_mail_index.tsv", "": Exit Sub
+Private Sub WriteMailIndexToFE()
+    Dim ws As Object: Set ws = FESheet("_folio_mail_idx")
+    If ws Is Nothing Then Exit Sub
+    ws.UsedRange.ClearContents
 
-    ' Count total entries
+    Dim idx As Object: Set idx = FolioData.GetMailIndex()
+    If idx Is Nothing Then Exit Sub
+    If idx.Count = 0 Then Exit Sub
+
     Dim outerKeys As Variant: outerKeys = idx.keys
     Dim total As Long: total = 0
     Dim i As Long, j As Long
-    For i = 0 To UBound(outerKeys)
-        total = total + idx(outerKeys(i)).Count
-    Next i
+    For i = 0 To UBound(outerKeys): total = total + idx(outerKeys(i)).Count: Next i
+    If total = 0 Then Exit Sub
 
-    Dim lines() As String: ReDim lines(0 To total - 1)
+    Dim data() As Variant: ReDim data(1 To total, 1 To 2)
     Dim n As Long: n = 0
     For i = 0 To UBound(outerKeys)
         Dim key As String: key = CStr(outerKeys(i))
         Dim inner As Object: Set inner = idx(outerKeys(i))
         Dim innerKeys As Variant: innerKeys = inner.keys
         For j = 0 To UBound(innerKeys)
-            lines(n) = key & vbTab & CStr(innerKeys(j))
             n = n + 1
+            data(n, 1) = key
+            data(n, 2) = CStr(innerKeys(j))
         Next j
     Next i
-    WriteCacheFile "_mail_index.tsv", Join(lines, vbLf)
+    ws.Range("A1").Resize(n, 2).Value = data
 End Sub
 
-Private Sub WriteCasesTsv()
+Private Sub WriteCasesToFE()
+    Dim ws As Object: Set ws = FESheet("_folio_cases")
+    If ws Is Nothing Then Exit Sub
+    ws.UsedRange.ClearContents
+
     Dim names As Object: Set names = FolioData.GetCaseNames()
-    If names Is Nothing Then WriteCacheFile "_cases.tsv", "": Exit Sub
-    If names.Count = 0 Then WriteCacheFile "_cases.tsv", "": Exit Sub
+    If names Is Nothing Then Exit Sub
+    If names.Count = 0 Then Exit Sub
 
     Dim keys As Variant: keys = names.keys
-    Dim lines() As String: ReDim lines(0 To UBound(keys))
+    Dim n As Long: n = UBound(keys) + 1
+    Dim data() As Variant: ReDim data(1 To n, 1 To 1)
     Dim i As Long
-    For i = 0 To UBound(keys): lines(i) = CStr(keys(i)): Next i
-    WriteCacheFile "_cases.tsv", Join(lines, vbLf)
+    For i = 0 To UBound(keys): data(i + 1, 1) = CStr(keys(i)): Next i
+    ws.Range("A1").Resize(n, 1).Value = data
 End Sub
 
-Private Sub WriteCaseFilesTsv()
-    ' Use pre-built TSV lines from FolioData (avoids Dict→TSV conversion)
-    Dim content As String: content = FolioData.GetCaseFilesTsvContent()
-    WriteCacheFile "_case_files.tsv", content
+Private Sub WriteCaseFilesToFE()
+    Dim ws As Object: Set ws = FESheet("_folio_files")
+    If ws Is Nothing Then Exit Sub
+    ws.UsedRange.ClearContents
+
+    Dim lines() As String, cnt As Long
+    FolioData.GetCaseFileLines lines, cnt
+    If cnt = 0 Then Exit Sub
+
+    Dim data() As Variant: ReDim data(1 To cnt, 1 To 7)
+    Dim r As Long: r = 0
+    Dim i As Long
+    For i = 0 To cnt - 1
+        If Len(lines(i)) = 0 Then GoTo NextCF
+        Dim cols() As String: cols = Split(lines(i), vbTab)
+        If UBound(cols) < 6 Then GoTo NextCF
+        r = r + 1
+        Dim c As Long
+        For c = 0 To 6: data(r, c + 1) = cols(c): Next c
+NextCF:
+    Next i
+    If r > 0 Then ws.Range("A1").Resize(r, 7).Value = data
 End Sub
 
-' ============================================================================
-' Diff TSV Writer (reports mail/case adds/removes to FE)
-' Format: action<TAB>type<TAB>id<TAB>description
-' ============================================================================
+Private Sub WriteDiffToFE()
+    Dim ws As Object: Set ws = FESheet("_folio_diff")
+    If ws Is Nothing Then Exit Sub
+    ws.UsedRange.ClearContents
 
-Private Sub WriteDiffTsv()
-    Dim buf As String: buf = ""
-    Dim first As Boolean: first = True
-
-    ' Mail added
     Dim ma As Object: Set ma = FolioData.GetMailAdded()
+    Dim mr As Object: Set mr = FolioData.GetMailRemoved()
+    Dim ca As Object: Set ca = FolioData.GetCaseAdded()
+    Dim cr As Object: Set cr = FolioData.GetCaseRemoved()
+    Dim total As Long: total = ma.Count + mr.Count + ca.Count + cr.Count
+    If total = 0 Then Exit Sub
+
+    Dim data() As Variant: ReDim data(1 To total, 1 To 4)
+    Dim n As Long: n = 0
+    Dim i As Long
+
     If ma.Count > 0 Then
         Dim mak As Variant: mak = ma.keys
-        Dim i As Long
-        For i = 0 To UBound(mak)
-            If Not first Then buf = buf & vbLf
-            first = False
-            buf = buf & "added" & vbTab & "mail" & vbTab & _
-                SanitizeTsvField(CStr(mak(i))) & vbTab & SanitizeTsvField(CStr(ma(mak(i))))
+        For i = 0 To UBound(mak): n = n + 1
+            data(n, 1) = "added": data(n, 2) = "mail"
+            data(n, 3) = CStr(mak(i)): data(n, 4) = CStr(ma(mak(i)))
         Next i
     End If
-
-    ' Mail removed
-    Dim mr As Object: Set mr = FolioData.GetMailRemoved()
     If mr.Count > 0 Then
         Dim mrk As Variant: mrk = mr.keys
-        For i = 0 To UBound(mrk)
-            If Not first Then buf = buf & vbLf
-            first = False
-            buf = buf & "removed" & vbTab & "mail" & vbTab & _
-                SanitizeTsvField(CStr(mrk(i))) & vbTab & SanitizeTsvField(CStr(mr(mrk(i))))
+        For i = 0 To UBound(mrk): n = n + 1
+            data(n, 1) = "removed": data(n, 2) = "mail"
+            data(n, 3) = CStr(mrk(i)): data(n, 4) = CStr(mr(mrk(i)))
         Next i
     End If
-
-    ' Case added
-    Dim ca As Object: Set ca = FolioData.GetCaseAdded()
     If ca.Count > 0 Then
         Dim cak As Variant: cak = ca.keys
-        For i = 0 To UBound(cak)
-            If Not first Then buf = buf & vbLf
-            first = False
-            buf = buf & "added" & vbTab & "case" & vbTab & _
-                SanitizeTsvField(CStr(cak(i))) & vbTab & SanitizeTsvField(CStr(cak(i)))
+        For i = 0 To UBound(cak): n = n + 1
+            data(n, 1) = "added": data(n, 2) = "case"
+            data(n, 3) = CStr(cak(i)): data(n, 4) = CStr(cak(i))
         Next i
     End If
-
-    ' Case removed
-    Dim cr As Object: Set cr = FolioData.GetCaseRemoved()
     If cr.Count > 0 Then
         Dim crk As Variant: crk = cr.keys
-        For i = 0 To UBound(crk)
-            If Not first Then buf = buf & vbLf
-            first = False
-            buf = buf & "removed" & vbTab & "case" & vbTab & _
-                SanitizeTsvField(CStr(crk(i))) & vbTab & SanitizeTsvField(CStr(crk(i)))
+        For i = 0 To UBound(crk): n = n + 1
+            data(n, 1) = "removed": data(n, 2) = "case"
+            data(n, 3) = CStr(crk(i)): data(n, 4) = CStr(crk(i))
         Next i
     End If
-
-    WriteCacheFile "_diff.tsv", buf
+    ws.Range("A1").Resize(n, 4).Value = data
 End Sub
 
 ' ============================================================================
-' Signal File
+' Signal/Clock writes to FE
 ' ============================================================================
 
-Private Sub WriteSignalFile(ver As Long)
-    If Len(g_cacheFolder) = 0 Then Exit Sub
-    Dim path As String: path = g_cacheFolder & "_signal.txt"
-    Dim f As Long: f = FreeFile
-    Open path For Output As #f
-    Print #f, CStr(ver)
-    Close #f
+Private Sub WriteClockToFE()
+    Dim ws As Object: Set ws = FESheet("_folio_signal")
+    If ws Is Nothing Then Exit Sub
+    ws.Range("A1").Value2 = Format$(Now, "hh:nn:ss") & " "
 End Sub
 
-Private Sub BumpSignal()
-    g_signalVersion = g_signalVersion + 1
-    WriteSignalFile g_signalVersion
+Private Sub WriteVersionToFE(ver As Long)
+    Dim ws As Object: Set ws = FESheet("_folio_signal")
+    If ws Is Nothing Then Exit Sub
+    ws.Range("B1").Value = ver
+End Sub
+
+Private Sub WriteSignalToFE(ver As Long, timing As String)
+    Dim ws As Object: Set ws = FESheet("_folio_signal")
+    If ws Is Nothing Then Exit Sub
+    ws.Range("A1").Value2 = Format$(Now, "hh:nn:ss") & " "
+    ws.Range("B1").Value = ver
+    ws.Range("C1").Value = timing
 End Sub
 
 ' ============================================================================
 ' Timer
 ' ============================================================================
 
-Private Sub LogTiming(msg As String)
+' Clock timer (1 second, independent of scan poll)
+Public Sub ClockCallback()
+    g_clockScheduled = False
+    If Not g_active Then Exit Sub
     On Error Resume Next
-    Dim f As Long: f = FreeFile
-    Open g_cacheFolder & "_timing.log" For Append As #f
-    Print #f, Format$(Now, "hh:nn:ss") & " " & msg
-    Close #f
+    WriteClockToFE
+    On Error GoTo 0
+    ScheduleNextClock
+End Sub
+
+Private Sub ScheduleNextClock()
+    If g_clockScheduled Then Exit Sub
+    On Error Resume Next
+    g_nextClockAt = Now + TimeSerial(0, 0, 1)
+    Application.OnTime g_nextClockAt, "FolioWorker.ClockCallback"
+    g_clockScheduled = True
+    If Err.Number <> 0 Then g_clockScheduled = False: Err.Clear
     On Error GoTo 0
 End Sub
 
@@ -384,9 +394,6 @@ Private Sub ScheduleNextPoll()
     g_nextPollAt = Now + TimeSerial(0, 0, 5)
     Application.OnTime g_nextPollAt, "FolioWorker.WorkerPollCallback"
     g_scheduled = True
-    If Err.Number <> 0 Then
-        g_scheduled = False
-        Err.Clear
-    End If
+    If Err.Number <> 0 Then g_scheduled = False: Err.Clear
     On Error GoTo 0
 End Sub
