@@ -1352,20 +1352,16 @@ Private Sub LogWorkerDiffs()
     Dim diffs As Collection: Set diffs = FolioData.GetFEDiffs()
     If diffs.Count = 0 Then Exit Sub
 
+    ' Batch write to persistent changelog (single Range.Value operation)
+    FolioChangeLog.AddLogEntries diffs
+
+    ' Display in log ListBox
     Dim i As Long
     For i = 1 To diffs.Count
         Dim d As Object: Set d = diffs(i)
         Dim action As String: action = FolioHelpers.DictStr(d, "action")
         Dim dtype As String: dtype = FolioHelpers.DictStr(d, "type")
-        Dim did As String: did = FolioHelpers.DictStr(d, "id")
         Dim desc As String: desc = FolioHelpers.DictStr(d, "description")
-
-        ' Log to persistent changelog
-        Dim field As String
-        If action = "added" Then field = "+" & dtype Else field = "-" & dtype
-        FolioChangeLog.AddLogEntry dtype, did, field, "", desc, "external"
-
-        ' Display in log ListBox
         Dim prefix As String
         If action = "added" Then prefix = "+" Else prefix = "-"
         Dim line As String

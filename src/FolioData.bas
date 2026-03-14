@@ -18,6 +18,9 @@ Private m_mailDiffReady As Boolean
 Private m_mailRootMod As Date       ' Last known mail root folder mod time
 Private m_caseFiles As Object       ' Dict: root\case\file_path -> record (full file tree)
 Private m_caseFilesHash As String   ' Hash of last scan for change detection
+Private m_caseFileLines() As String ' TSV lines for case files (direct build, avoids per-file Dict)
+Private m_caseFileLinesCount As Long
+Private m_caseFilesByFolder As Object ' Dict: case_folder_path -> "startIdx|count"
 Private m_caseNames As Object
 Private m_caseAdded As Object
 Private m_caseRemoved As Object
@@ -38,6 +41,15 @@ Private m_feLastVersion As Long
 Private m_feCacheFolder As String
 Private m_feDiffs As Collection      ' Collection of Dict: action, type, id, description
 
+Private Sub LogProfile(msg As String)
+    On Error Resume Next
+    Dim f As Long: f = FreeFile
+    Open ThisWorkbook.path & "\.folio_cache\_profile.log" For Append As #f
+    Print #f, Format$(Now, "hh:nn:ss") & " " & msg
+    Close #f
+    On Error GoTo 0
+End Sub
+
 Private Function GetFSO() As Object
     If m_fso Is Nothing Then Set m_fso = CreateObject("Scripting.FileSystemObject")
     Set GetFSO = m_fso
@@ -57,6 +69,9 @@ Public Sub ClearCache()
     m_caseDiffReady = False
     m_caseRootMod = #1/1/1900#
     Set m_caseFolderMods = Nothing
+    m_caseFileLinesCount = 0
+    Erase m_caseFileLines
+    Set m_caseFilesByFolder = Nothing
 End Sub
 
 ' ============================================================================
@@ -287,7 +302,12 @@ End Function
 ' Two-pass: 1) collect subfolder paths, 2) process each
 Private Sub ScanMailDir(rootPath As String, seenPaths As Object)
     On Error Resume Next
+    Dim tDir As Single, tRead As Single, tParse As Single, tBuild As Single
+    tDir = 0: tRead = 0: tParse = 0: tBuild = 0
+    Dim t_ As Single
+
     ' Pass 1: collect all subfolder paths using Dir$
+    t_ = Timer
     Dim folders As New Collection
     Dim d As String: d = Dir$(rootPath & "\*", vbDirectory)
     Do While Len(d) > 0
@@ -299,20 +319,28 @@ Private Sub ScanMailDir(rootPath As String, seenPaths As Object)
         End If
         d = Dir$
     Loop
+    tDir = Timer - t_
 
     ' Pass 2: process each folder
     Dim i As Long
+    Dim nRead As Long, nParse As Long, nBuild As Long
+    nRead = 0: nParse = 0: nBuild = 0
     For i = 1 To folders.Count
         Dim fp As String: fp = folders(i)
         Dim metaPath As String: metaPath = fp & "\meta.json"
         If Len(Dir$(metaPath)) > 0 Then
             seenPaths(fp) = True
             If Not m_mailRecords.Exists(fp) Then
+                t_ = Timer
                 Dim json As String: json = FolioHelpers.ReadTextFile(metaPath)
+                tRead = tRead + (Timer - t_): nRead = nRead + 1
                 If Len(json) > 0 Then
+                    t_ = Timer
                     Dim rec As Object: Set rec = Nothing
-                    Set rec = FolioHelpers.ParseJson(json)
+                    Set rec = FolioHelpers.ParseMailMeta(json)
+                    tParse = tParse + (Timer - t_): nParse = nParse + 1
                     If Not rec Is Nothing Then
+                        t_ = Timer
                         Dim bp As String: bp = FolioHelpers.DictStr(rec, "body_path")
                         If Len(bp) > 0 And Left$(bp, Len(fp)) <> fp Then
                             FolioHelpers.DictPut rec, "body_path", fp & "\" & bp
@@ -332,11 +360,14 @@ Private Sub ScanMailDir(rootPath As String, seenPaths As Object)
                             m_mailAdded(eid) = FolioHelpers.DictStr(rec, "subject") & _
                                 " - " & FolioHelpers.DictStr(rec, "sender_email")
                         End If
+                        tBuild = tBuild + (Timer - t_): nBuild = nBuild + 1
                     End If
                 End If
             End If
         End If
     Next i
+    ' Profile output
+    LogProfile "ScanMailDir: dir=" & Format$(tDir, "0.000") & "s read=" & Format$(tRead, "0.000") & "s(" & nRead & ") parse=" & Format$(tParse, "0.000") & "s(" & nParse & ") build=" & Format$(tBuild, "0.000") & "s(" & nBuild & ")"
     On Error GoTo 0
 End Sub
 
@@ -408,13 +439,7 @@ Private Sub ResolveAttachmentPaths(rec As Object, folderPath As String)
     Dim resolved As Object: Set resolved = FolioHelpers.NewDict()
     Dim i As Long
     For i = 1 To atts.Count
-        Dim fn As String
-        If IsObject(atts(i)) Then
-            Dim attItem As Object: Set attItem = atts(i)
-            fn = FolioHelpers.DictStr(attItem, "path")
-        Else
-            fn = CStr(atts(i))
-        End If
+        Dim fn As String: fn = CStr(atts(i))
         If Len(fn) > 0 Then resolved.Add folderPath & "\" & fn, fn
     Next i
     FolioHelpers.DictPut rec, "attachment_paths", resolved
@@ -514,13 +539,18 @@ Public Function RefreshCaseFiles(rootPath As String) As Boolean
     RefreshCaseFiles = False
     If Not FolioHelpers.FolderExists(rootPath) Then eh.OK: Exit Function
 
-    If m_caseFiles Is Nothing Then Set m_caseFiles = FolioHelpers.NewDict()
     If m_caseFolderMods Is Nothing Then Set m_caseFolderMods = FolioHelpers.NewDict()
+
+    ' Initialize TSV lines array on first call
+    If m_caseFileLinesCount = 0 Then
+        ReDim m_caseFileLines(0 To 4000)
+    End If
 
     Dim changed As Boolean: changed = False
     Dim seenFolders As Object: Set seenFolders = FolioHelpers.NewDict()
 
     ' Enumerate case folders with Dir$ (avoids FSO COM overhead)
+    Dim tDirEnum As Single: tDirEnum = Timer
     Dim caseFolders As New Collection
     Dim d As String: d = Dir$(rootPath & "\*", vbDirectory)
     Do While Len(d) > 0
@@ -530,15 +560,23 @@ Public Function RefreshCaseFiles(rootPath As String) As Boolean
         End If
         d = Dir$
     Loop
+    tDirEnum = Timer - tDirEnum
+
+    Dim tModCheck As Single: tModCheck = 0
+    Dim tScanFiles As Single: tScanFiles = 0
+    Dim nScanned As Long: nScanned = 0
+    Dim t_ As Single
 
     Dim fi As Long
     For fi = 1 To caseFolders.Count
         Dim subPath As String: subPath = caseFolders(fi)
         Dim subName As String: subName = Mid$(subPath, InStrRev(subPath, "\") + 1)
         seenFolders(subPath) = True
+        t_ = Timer
         Dim curMod As String: curMod = Format$(FileDateTime(subPath), "yyyy-mm-dd hh:nn:ss")
         Dim prevMod As String: prevMod = ""
         If m_caseFolderMods.Exists(subPath) Then prevMod = CStr(m_caseFolderMods(subPath))
+        tModCheck = tModCheck + (Timer - t_)
 
         If curMod <> prevMod Then
             ' Folder changed — rescan its files
@@ -546,10 +584,13 @@ Public Function RefreshCaseFiles(rootPath As String) As Boolean
             ' Remove old entries for this case folder
             RemoveCaseFilesByRoot subPath
             ' Scan new entries
-            ScanCaseFilesRecursive subPath, subName, subPath, m_caseFiles
+            t_ = Timer
+            ScanCaseFilesRecursive subPath, subName, subPath
+            tScanFiles = tScanFiles + (Timer - t_): nScanned = nScanned + 1
             changed = True
         End If
     Next fi
+    LogProfile "RefreshCaseFiles: dirEnum=" & Format$(tDirEnum, "0.000") & "s modCheck=" & Format$(tModCheck, "0.000") & "s scanFiles=" & Format$(tScanFiles, "0.000") & "s(" & nScanned & " folders)"
 
     ' Remove entries for deleted case folders
     If m_caseFolderMods.Count > 0 Then
@@ -570,19 +611,31 @@ ErrHandler: eh.Catch
 End Function
 
 Private Sub RemoveCaseFilesByRoot(rootPath As String)
-    If m_caseFiles Is Nothing Then Exit Sub
-    If m_caseFiles.Count = 0 Then Exit Sub
-    Dim keys As Variant: keys = m_caseFiles.keys
+    ' Clear matching TSV lines (set to empty, compacted on write)
     Dim i As Long
-    For i = 0 To UBound(keys)
-        If Left$(CStr(keys(i)), Len(rootPath)) = rootPath Then m_caseFiles.Remove keys(i)
+    Dim prefix As String: prefix = rootPath & vbTab
+    Dim prefixLen As Long: prefixLen = Len(rootPath)
+    For i = 0 To m_caseFileLinesCount - 1
+        If Len(m_caseFileLines(i)) > 0 Then
+            ' TSV format: case_id<TAB>file_name<TAB>file_path<TAB>...
+            ' file_path (3rd field) starts with rootPath
+            Dim tabPos1 As Long: tabPos1 = InStr(1, m_caseFileLines(i), vbTab)
+            If tabPos1 > 0 Then
+                Dim tabPos2 As Long: tabPos2 = InStr(tabPos1 + 1, m_caseFileLines(i), vbTab)
+                If tabPos2 > 0 Then
+                    If Mid$(m_caseFileLines(i), tabPos2 + 1, prefixLen) = rootPath Then
+                        m_caseFileLines(i) = ""
+                    End If
+                End If
+            End If
+        End If
     Next i
 End Sub
 
 ' Dir$-based case file scanner (avoids FSO COM overhead)
-Private Sub ScanCaseFilesRecursive(ByVal folderPath As String, caseId As String, rootPath As String, result As Object)
+' Scan case files — build TSV lines directly, no per-file Dictionary
+Private Sub ScanCaseFilesRecursive(ByVal folderPath As String, caseId As String, rootPath As String)
     On Error Resume Next
-    ' Collect entries first (Dir$ is not re-entrant)
     Dim entries As New Collection
     Dim d As String: d = Dir$(folderPath & "\*", vbDirectory Or vbNormal)
     Do While Len(d) > 0
@@ -595,17 +648,18 @@ Private Sub ScanCaseFilesRecursive(ByVal folderPath As String, caseId As String,
         Dim fullPath As String: fullPath = folderPath & "\" & entries(i)
         Dim attr As Long: attr = GetAttr(fullPath)
         If (attr And vbDirectory) = vbDirectory Then
-            ScanCaseFilesRecursive fullPath, caseId, rootPath, result
+            ScanCaseFilesRecursive fullPath, caseId, rootPath
         Else
-            Dim rec As Object: Set rec = FolioHelpers.NewDict()
-            rec.Add "case_id", caseId
-            rec.Add "file_name", entries(i)
-            rec.Add "file_path", fullPath
-            rec.Add "folder_path", folderPath
-            rec.Add "relative_path", Mid$(fullPath, Len(rootPath) + 2)
-            rec.Add "file_size", FileLen(fullPath)
-            rec.Add "modified_at", Format$(FileDateTime(fullPath), "yyyy-mm-dd hh:nn:ss")
-            Set result(fullPath) = rec
+            ' Grow array if needed
+            If m_caseFileLinesCount > UBound(m_caseFileLines) Then
+                ReDim Preserve m_caseFileLines(0 To m_caseFileLinesCount + 2000)
+            End If
+            ' Build TSV line directly (no Dict creation)
+            m_caseFileLines(m_caseFileLinesCount) = caseId & vbTab & entries(i) & vbTab & _
+                fullPath & vbTab & folderPath & vbTab & _
+                Mid$(fullPath, Len(rootPath) + 2) & vbTab & _
+                CStr(FileLen(fullPath)) & vbTab & CStr(FileDateTime(fullPath))
+            m_caseFileLinesCount = m_caseFileLinesCount + 1
         End If
     Next i
     On Error GoTo 0
@@ -614,6 +668,23 @@ End Sub
 Public Function GetCaseFiles() As Object
     If m_caseFiles Is Nothing Then Set m_caseFiles = FolioHelpers.NewDict()
     Set GetCaseFiles = m_caseFiles
+End Function
+
+' Return compacted TSV content for case files (skips empty lines from removals)
+Public Function GetCaseFilesTsvContent() As String
+    If m_caseFileLinesCount = 0 Then GetCaseFilesTsvContent = "": Exit Function
+    ' Compact: collect non-empty lines
+    Dim out() As String: ReDim out(0 To m_caseFileLinesCount - 1)
+    Dim n As Long: n = 0
+    Dim i As Long
+    For i = 0 To m_caseFileLinesCount - 1
+        If Len(m_caseFileLines(i)) > 0 Then
+            out(n) = m_caseFileLines(i): n = n + 1
+        End If
+    Next i
+    If n = 0 Then GetCaseFilesTsvContent = "": Exit Function
+    ReDim Preserve out(0 To n - 1)
+    GetCaseFilesTsvContent = Join(out, vbLf)
 End Function
 
 Public Function GetCaseAdded() As Object
@@ -648,12 +719,12 @@ Public Function ReadSignalVersion() As Long
     ReadSignalVersion = 0
     On Error Resume Next
     Dim path As String: path = GetFECacheFolder() & "_signal.txt"
-    If Not GetFSO().FileExists(path) Then Exit Function
-    Dim ts As Object: Set ts = GetFSO().OpenTextFile(path, 1, False)
-    If ts Is Nothing Then Exit Function
-    Dim s As String: s = ts.ReadLine
-    ts.Close
-    Set ts = Nothing
+    If Len(Dir$(path)) = 0 Then Exit Function
+    Dim f As Long: f = FreeFile
+    Dim s As String
+    Open path For Input As #f
+    Line Input #f, s
+    Close #f
     If Len(s) > 0 Then ReadSignalVersion = CLng(Trim$(s))
     On Error GoTo 0
 End Function
@@ -666,13 +737,78 @@ Public Function LoadCacheIfChanged() As Boolean
     If ver <= 0 Then Exit Function       ' negative = BE still writing
     If ver = m_feLastVersion Then Exit Function
     m_feLastVersion = ver
-    LoadMailTsv
-    LoadMailIndexTsv
-    LoadCasesTsv
-    LoadCaseFilesTsv
+
+    ' Always load diff (small file)
     LoadDiffTsv
+
+    If m_feMailRecords Is Nothing Then
+        ' First load: full TSV read
+        LoadMailTsv
+        LoadMailIndexTsv
+        LoadCasesTsv
+        LoadCaseFilesTsv
+    Else
+        ' Subsequent: apply diffs to existing caches
+        ApplyFEDiffs
+        ' Reload case files TSV only if diff contains case changes or case file changes happened
+        ' (signal bumped = something changed, but if only mail changed, skip case reload)
+        ' For safety, reload case files if any diff exists or version jumped by >1
+        If Not m_feDiffs Is Nothing Then
+            If m_feDiffs.Count > 0 Then
+                LoadCasesTsv
+                LoadCaseFilesTsv
+            End If
+        End If
+    End If
     LoadCacheIfChanged = True
 End Function
+
+' Apply diff entries to existing FE caches without full TSV reload
+Private Sub ApplyFEDiffs()
+    If m_feDiffs Is Nothing Then Exit Sub
+    If m_feDiffs.Count = 0 Then Exit Sub
+    Dim i As Long
+    For i = 1 To m_feDiffs.Count
+        Dim d As Object: Set d = m_feDiffs(i)
+        Dim action As String: action = FolioHelpers.DictStr(d, "action")
+        Dim dtype As String: dtype = FolioHelpers.DictStr(d, "type")
+        Dim did As String: did = FolioHelpers.DictStr(d, "id")
+        If dtype = "mail" Then
+            If action = "added" Then
+                ' New mail: need full mail TSV reload to get record details
+                LoadMailTsv
+                LoadMailIndexTsv
+                Exit Sub  ' Full reload done, no need to continue
+            ElseIf action = "removed" Then
+                If Not m_feMailRecords Is Nothing Then
+                    If m_feMailRecords.Exists(did) Then m_feMailRecords.Remove did
+                End If
+                ' Remove from index (iterate index to find and remove)
+                RemoveFromFEMailIndex did
+            End If
+        ElseIf dtype = "case" Then
+            If action = "added" Then
+                ' Will be handled by LoadCasesTsv below
+            ElseIf action = "removed" Then
+                If Not m_feCaseNames Is Nothing Then
+                    If m_feCaseNames.Exists(did) Then m_feCaseNames.Remove did
+                End If
+            End If
+        End If
+    Next i
+End Sub
+
+Private Sub RemoveFromFEMailIndex(entryId As String)
+    If m_feMailIndex Is Nothing Then Exit Sub
+    If m_feMailIndex.Count = 0 Then Exit Sub
+    Dim keys As Variant: keys = m_feMailIndex.keys
+    Dim i As Long
+    For i = 0 To UBound(keys)
+        Dim inner As Object: Set inner = m_feMailIndex(keys(i))
+        If inner.Exists(entryId) Then inner.Remove entryId
+        If inner.Count = 0 Then m_feMailIndex.Remove keys(i)
+    Next i
+End Sub
 
 Public Function GetFELastVersion() As Long
     GetFELastVersion = m_feLastVersion

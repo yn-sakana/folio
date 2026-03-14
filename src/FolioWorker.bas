@@ -281,24 +281,9 @@ Private Sub WriteCasesTsv()
 End Sub
 
 Private Sub WriteCaseFilesTsv()
-    Dim files As Object: Set files = FolioData.GetCaseFiles()
-    If files Is Nothing Then WriteCacheFile "_case_files.tsv", "": Exit Sub
-    If files.Count = 0 Then WriteCacheFile "_case_files.tsv", "": Exit Sub
-
-    Dim keys As Variant: keys = files.keys
-    Dim lines() As String: ReDim lines(0 To UBound(keys))
-    Dim i As Long
-    For i = 0 To UBound(keys)
-        Dim rec As Object: Set rec = files(keys(i))
-        lines(i) = SanitizeTsvField(FolioHelpers.DictStr(rec, "case_id")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "file_name")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "file_path")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "folder_path")) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "relative_path")) & vbTab _
-            & SanitizeTsvField(CStr(FolioHelpers.DictStr(rec, "file_size"))) & vbTab _
-            & SanitizeTsvField(FolioHelpers.DictStr(rec, "modified_at"))
-    Next i
-    WriteCacheFile "_case_files.tsv", Join(lines, vbLf)
+    ' Use pre-built TSV lines from FolioData (avoids Dict→TSV conversion)
+    Dim content As String: content = FolioData.GetCaseFilesTsvContent()
+    WriteCacheFile "_case_files.tsv", content
 End Sub
 
 ' ============================================================================

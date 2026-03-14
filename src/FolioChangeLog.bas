@@ -55,6 +55,49 @@ Public Sub AddLogEntry(src As String, key As String, field As String, _
 ErrHandler: eh.Catch
 End Sub
 
+' Batch version: write multiple log entries in one Range.Value operation
+Public Sub AddLogEntries(entries As Collection)
+    If entries Is Nothing Then Exit Sub
+    If entries.Count = 0 Then Exit Sub
+    On Error GoTo ErrHandler
+    EnsureLogSheet
+    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(LOG_SHEET)
+    Dim nextRow As Long
+    nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+
+    ' Rotate if needed
+    If nextRow + entries.Count > MAX_LOG_ROWS + 1 Then
+        Dim delRows As Long: delRows = (nextRow + entries.Count) - MAX_LOG_ROWS - 1
+        If delRows > 0 Then
+            ws.Rows("2:" & (delRows + 1)).Delete
+            nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+        End If
+    End If
+
+    ' Build 2D array
+    Dim n As Long: n = entries.Count
+    Dim data() As Variant: ReDim data(1 To n, 1 To 7)
+    Dim ts As String: ts = Format$(Now, "yyyy-mm-dd hh:nn:ss")
+    Dim i As Long
+    For i = 1 To n
+        Dim e As Object: Set e = entries(i)
+        data(i, 1) = ts
+        data(i, 2) = FolioHelpers.DictStr(e, "type")
+        data(i, 3) = FolioHelpers.DictStr(e, "id")
+        Dim act As String: act = FolioHelpers.DictStr(e, "action")
+        If act = "added" Then data(i, 4) = "+" & FolioHelpers.DictStr(e, "type") _
+        Else data(i, 4) = "-" & FolioHelpers.DictStr(e, "type")
+        data(i, 5) = ""
+        data(i, 6) = FolioHelpers.DictStr(e, "description")
+        data(i, 7) = "external"
+    Next i
+
+    ' Single Range.Value write
+    ws.Cells(nextRow, 1).Resize(n, 7).Value = data
+    Exit Sub
+ErrHandler:
+End Sub
+
 Public Function GetRecentEntries(Optional count As Long = 200) As Collection
     Dim eh As New ErrorHandler: eh.Enter "FolioChangeLog", "GetRecentEntries"
     On Error GoTo ErrHandler

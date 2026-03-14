@@ -199,6 +199,81 @@ Public Function JsonEscape(ByVal s As String) As String
 End Function
 
 ' ============================================================================
+' Fast mail meta.json parser (InStr-based, no char-by-char parsing)
+' Expects fixed structure: flat object with "attachments" array of {"path":"..."} objects
+' ============================================================================
+
+Public Function ParseMailMeta(ByVal json As String) As Object
+    Dim d As Object: Set d = NewDict()
+    Set ParseMailMeta = d
+    If Len(json) < 5 Then Exit Function
+
+    ' Extract simple string fields via InStr
+    ExtractField json, d, "mail_id"
+    ExtractField json, d, "entry_id"
+    ExtractField json, d, "mailbox_address"
+    ExtractField json, d, "folder_path"
+    ExtractField json, d, "received_at"
+    ExtractField json, d, "sender_name"
+    ExtractField json, d, "sender_email"
+    ExtractField json, d, "subject"
+    ExtractField json, d, "body_path"
+    ExtractField json, d, "msg_path"
+
+    ' Extract attachments: just collect path strings into a Collection (no Dict per attachment)
+    Dim attStart As Long: attStart = InStr(1, json, """attachments""")
+    If attStart > 0 Then
+        Dim attCol As New Collection
+        Dim searchPos As Long: searchPos = attStart
+        Do
+            Dim pathKey As Long: pathKey = InStr(searchPos, json, """path""")
+            If pathKey = 0 Then Exit Do
+            Dim pathVal As String: pathVal = ExtractValueAt(json, pathKey + 6)
+            If Len(pathVal) > 0 Then attCol.Add pathVal
+            searchPos = pathKey + 6
+        Loop
+        d.Add "attachments", attCol
+    End If
+End Function
+
+Private Sub ExtractField(ByRef json As String, d As Object, fieldName As String)
+    Dim key As String: key = """" & fieldName & """"
+    Dim pos As Long: pos = InStr(1, json, key)
+    If pos = 0 Then Exit Sub
+    ' Skip past key, colon, optional spaces, opening quote
+    Dim valStart As Long: valStart = InStr(pos + Len(key), json, """")
+    If valStart = 0 Then Exit Sub
+    valStart = valStart + 1
+    ' Find closing quote (handle \" escapes)
+    Dim valEnd As Long: valEnd = valStart
+    Do
+        valEnd = InStr(valEnd, json, """")
+        If valEnd = 0 Then Exit Sub
+        ' Check for escape
+        If Mid$(json, valEnd - 1, 1) <> "\" Then Exit Do
+        valEnd = valEnd + 1
+    Loop
+    Dim val As String: val = Mid$(json, valStart, valEnd - valStart)
+    ' Unescape common sequences
+    If InStr(1, val, "\") > 0 Then
+        val = Replace(val, "\""", """")
+        val = Replace(val, "\\", "\")
+        val = Replace(val, "\n", vbLf)
+        val = Replace(val, "\t", vbTab)
+    End If
+    d.Add fieldName, val
+End Sub
+
+Private Function ExtractValueAt(ByRef json As String, startPos As Long) As String
+    Dim valStart As Long: valStart = InStr(startPos, json, """")
+    If valStart = 0 Then Exit Function
+    valStart = valStart + 1
+    Dim valEnd As Long: valEnd = InStr(valStart, json, """")
+    If valEnd = 0 Then Exit Function
+    ExtractValueAt = Mid$(json, valStart, valEnd - valStart)
+End Function
+
+' ============================================================================
 ' Dictionary Helpers
 ' ============================================================================
 
