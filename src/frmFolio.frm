@@ -49,12 +49,10 @@ Private m_currentTable As ListObject
 Private m_filteredRows As Collection
 Private m_currentRecIdx As Long
 Private m_fieldEditors As Collection
-Private m_allMailRecords As Collection
-Private m_mailEntryIds As Object   ' Dictionary of known entry_id
-Private m_matchedMails As Collection
-Private m_folderRecords As Collection
-Private m_caseIds As Object        ' Dictionary of known case folder names
+Private m_matchedMails As Object    ' Dict from FindMailRecords
+Private m_matchedMailArr As Variant ' = m_matchedMails.Items (for indexed access)
 Private m_watcher As SheetWatcher
+Private m_inPoll As Boolean
 Private m_fileTreeItems As Collection
 Private m_undoStack As Collection
 Private m_filterConditions As Collection
@@ -87,11 +85,7 @@ Private Sub UserForm_Initialize()
     On Error GoTo ErrHandler
     Set m_filteredRows = New Collection
     Set m_fieldEditors = New Collection
-    Set m_allMailRecords = New Collection
-    Set m_mailEntryIds = CreateObject("Scripting.Dictionary")
-    Set m_matchedMails = New Collection
-    Set m_folderRecords = New Collection
-    Set m_caseIds = CreateObject("Scripting.Dictionary")
+    Set m_matchedMails = FolioHelpers.NewDict()
     Set m_fileTreeItems = New Collection
     Set m_undoStack = New Collection
     m_currentRecIdx = -1
@@ -211,7 +205,7 @@ Private Sub m_cmdPrint_Click()
         If m_lstMail Is Nothing Then Exit Sub
         Dim mi As Long: mi = m_lstMail.ListIndex
         If mi < 0 Then MsgBox "Select a mail to print.", vbExclamation: Exit Sub
-        FolioPrint.PrintMailFiles m_matchedMails, mi + 1
+        FolioPrint.PrintMailRecord m_matchedMailArr(mi)
     ElseIf activeTab = m_filesPageIdx And m_filesPageIdx >= 0 Then
         ' Print selected file(s)
         If m_lstFiles Is Nothing Then Exit Sub
@@ -523,33 +517,23 @@ Private Sub SwitchSource(sourceName As String)
     FolioConfig.EnsureSource sourceName
     FolioConfig.InitFieldSettingsFromTable sourceName, m_currentTable
 
+    ' Load data into FolioData cache (initial scan, diffs suppressed)
     Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
-    If Len(mailFolder) > 0 Then Set m_allMailRecords = FolioData.ReadMailArchive(mailFolder) Else Set m_allMailRecords = New Collection
+    If Len(mailFolder) > 0 Then FolioData.RefreshMailData mailFolder
     Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
-    If Len(caseRoot) > 0 Then Set m_folderRecords = FolioData.ReadCaseFolders(caseRoot) Else Set m_folderRecords = New Collection
+    If Len(caseRoot) > 0 Then FolioData.RefreshCaseNames caseRoot
+
+    ' Build search index for mail matching
+    Dim mailMatchField As String: mailMatchField = FolioConfig.GetSourceStr(sourceName, "mail_match_field")
+    If Len(mailMatchField) = 0 Then mailMatchField = "sender_email"
+    Dim mailMatchMode As String: mailMatchMode = FolioConfig.GetSourceStr(sourceName, "mail_match_mode", "exact")
+    FolioData.SetMailMatchConfig mailMatchField, mailMatchMode
 
     BuildFieldEditors
     BuildJoinedTabs
     m_loading = False
     UpdateRecordList
     LoadChangeLog
-
-    ' Prime join-state dictionaries before enabling log detection
-    ' so the first poll doesn't treat all existing items as "new"
-    Dim mi As Long
-    For mi = 1 To m_allMailRecords.Count
-        Dim mRec As Object: Set mRec = m_allMailRecords(mi)
-        Dim eid As String: eid = FolioHelpers.DictStr(mRec, "entry_id")
-        If Len(eid) > 0 And Not m_mailEntryIds.Exists(eid) Then
-            m_mailEntryIds.Add eid, FolioHelpers.DictStr(mRec, "subject") & " - " & FolioHelpers.DictStr(mRec, "sender_email")
-        End If
-    Next mi
-    Dim fi As Long
-    For fi = 1 To m_folderRecords.Count
-        Dim fRec As Object: Set fRec = m_folderRecords(fi)
-        Dim cid As String: cid = FolioHelpers.DictStr(fRec, "case_id")
-        If Len(cid) > 0 And Not m_caseIds.Exists(cid) Then m_caseIds.Add cid, True
-    Next fi
     m_initialLoadDone = True
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -711,7 +695,7 @@ Private Sub BuildJoinedTabs()
     On Error GoTo ErrHandler
     m_mailPageIdx = -1: m_filesPageIdx = -1
 
-    If Len(FolioConfig.GetSourceStr(m_currentSource, "mail_link_column")) > 0 And m_allMailRecords.Count > 0 Then
+    If Len(FolioConfig.GetSourceStr(m_currentSource, "mail_link_column")) > 0 And FolioData.GetMailCount() > 0 Then
         m_mpgTabs.Pages.Add
         m_mailPageIdx = m_mpgTabs.Pages.Count - 1
         Dim pgMail As MSForms.Page: Set pgMail = m_mpgTabs.Pages(m_mailPageIdx)
@@ -719,7 +703,7 @@ Private Sub BuildJoinedTabs()
         BuildMailPage pgMail
     End If
 
-    If Len(FolioConfig.GetSourceStr(m_currentSource, "folder_link_column")) > 0 And m_folderRecords.Count > 0 Then
+    If Len(FolioConfig.GetSourceStr(m_currentSource, "folder_link_column")) > 0 And FolioData.GetCaseCount() > 0 Then
         m_mpgTabs.Pages.Add
         m_filesPageIdx = m_mpgTabs.Pages.Count - 1
         Dim pgFiles As MSForms.Page: Set pgFiles = m_mpgTabs.Pages(m_filesPageIdx)
@@ -966,14 +950,12 @@ Private Sub UpdateMailTab()
     If Not IsNull(linkVar) And Not IsEmpty(linkVar) Then linkVal = CStr(linkVar)
     If Len(linkVal) = 0 Then Exit Sub
 
-    Dim mailMatchField As String: mailMatchField = FolioConfig.GetSourceStr(m_currentSource, "mail_match_field")
-    If Len(mailMatchField) = 0 Then mailMatchField = "sender_email"
-    Dim mailMatchMode As String: mailMatchMode = FolioConfig.GetSourceStr(m_currentSource, "mail_match_mode", "exact")
-    Set m_matchedMails = FolioData.FindJoinedRecords(m_allMailRecords, mailMatchField, linkVal, mailMatchMode)
+    Set m_matchedMails = FolioData.FindMailRecords(linkVal)
+    If m_matchedMails.Count > 0 Then m_matchedMailArr = m_matchedMails.Items
 
     Dim i As Long
-    For i = 1 To m_matchedMails.Count
-        Dim mr As Object: Set mr = m_matchedMails(i)
+    For i = 0 To m_matchedMails.Count - 1
+        Dim mr As Object: Set mr = m_matchedMailArr(i)
         Dim line As String
         line = DictStr(mr, "subject") & "  -  " & DictStr(mr, "sender_email") & "  " & DictStr(mr, "received_at")
         m_lstMail.AddItem line
@@ -1005,38 +987,43 @@ Private Sub UpdateFilesTab()
     Dim linkVal As String
     If Not IsNull(linkVar) And Not IsEmpty(linkVar) Then linkVal = CStr(linkVar)
 
-    Dim matched As Collection
-    Set matched = FolioData.FindJoinedRecords(m_folderRecords, "case_id", linkVal, "prefix")
+    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
+    Dim matched As Object
+    Set matched = FolioData.ReadCaseFiles(caseRoot, linkVal)
 
     ' Build tree: group by folder_path, show folder nodes then files
     Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
-    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
     Dim folders As Object: Set folders = NewDict()
-    Dim folderOrder As New Collection
-    Dim i As Long
-    For i = 1 To matched.Count
-        Dim fr As Object: Set fr = matched(i)
-        Dim fp As String: fp = DictStr(fr, "folder_path")
-        If Not folders.Exists(fp) Then
-            folders.Add fp, New Collection
-            folderOrder.Add fp
-        End If
-        Dim fc As Collection: Set fc = folders(fp)
-        fc.Add fr
-    Next i
+    Dim folderOrder As Object: Set folderOrder = NewDict()
+    If matched.Count > 0 Then
+        Dim mItems As Variant: mItems = matched.Items
+        Dim i As Long
+        For i = 0 To matched.Count - 1
+            Dim fr As Object: Set fr = mItems(i)
+            Dim fp As String: fp = DictStr(fr, "folder_path")
+            If Not folders.Exists(fp) Then
+                folders.Add fp, NewDict()
+                folderOrder.Add fp, True
+            End If
+            Dim fc As Object: Set fc = folders(fp)
+            Set fc(DictStr(fr, "file_path")) = fr
+        Next i
+    End If
 
     ' Find case root path (e.g. C:\...\cases\R06-001)
     Dim rootPath As String
     If matched.Count > 0 Then
-        Dim caseId As String: caseId = DictStr(matched(1), "case_id")
+        Dim caseId As String: caseId = DictStr(mItems(0), "case_id")
         rootPath = caseRoot & "\" & caseId
     End If
 
     ' Collect all tree nodes (folder + files) in order
     Dim nodes As New Collection
+    Dim foKeys As Variant
+    If folderOrder.Count > 0 Then foKeys = folderOrder.keys
     Dim fi As Long
-    For fi = 1 To folderOrder.Count
-        Dim folderPath As String: folderPath = CStr(folderOrder(fi))
+    For fi = 0 To folderOrder.Count - 1
+        Dim folderPath As String: folderPath = CStr(foKeys(fi))
         Dim folderName As String: folderName = fso.GetFileName(folderPath)
         Dim depth As Long: depth = 0
         If Len(rootPath) > 0 And Len(folderPath) > Len(rootPath) Then
@@ -1053,9 +1040,11 @@ Private Sub UpdateFilesTab()
         nodes.Add nd
 
         Set fc = folders(folderPath)
+        Dim fcItems As Variant
+        If fc.Count > 0 Then fcItems = fc.Items
         Dim j As Long
-        For j = 1 To fc.Count
-            Set fr = fc(j)
+        For j = 0 To fc.Count - 1
+            Set fr = fcItems(j)
             Set nd = NewDict()
             nd.Add "depth", CLng(depth + 1)
             nd.Add "type", "file"
@@ -1312,14 +1301,17 @@ End Sub
 
 Public Sub DoPollCycle()
     If Not FolioMain.g_pollActive Then Exit Sub
-    On Error Resume Next
+    If m_inPoll Then Exit Sub
+    m_inPoll = True
+    On Error GoTo PollExit
     If Me.Width <> m_lastWidth Or Me.Height <> m_lastHeight Then
         m_lastWidth = Me.Width: m_lastHeight = Me.Height
         RepositionControls
     End If
     If Not m_lblClock Is Nothing Then m_lblClock.Caption = Format$(Now, "hh:nn:ss")
     If Len(m_currentSource) > 0 And Not m_loading Then RefreshJoinedData
-    On Error GoTo 0
+PollExit:
+    m_inPoll = False
 End Sub
 
 Private Sub RefreshCurrentRecord()
@@ -1338,72 +1330,44 @@ End Sub
 Private Sub RefreshJoinedData()
     On Error Resume Next
 
-    ' ReadMailArchive / ReadCaseFolders use a 30-second cache internally,
-    ' so calling them every 5-second poll is cheap when cache hits.
+    ' Incremental refresh via FolioData (cache-based, lightweight)
     Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
-    Dim prevMailRef As Collection: Set prevMailRef = m_allMailRecords
-    If Len(mailFolder) > 0 Then Set m_allMailRecords = FolioData.ReadMailArchive(mailFolder)
+    Dim mailChanged As Boolean
+    If Len(mailFolder) > 0 Then mailChanged = FolioData.RefreshMailData(mailFolder)
+
     Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
-    Dim prevCaseRef As Collection: Set prevCaseRef = m_folderRecords
-    If Len(caseRoot) > 0 Then Set m_folderRecords = FolioData.ReadCaseFolders(caseRoot)
+    Dim caseChanged As Boolean
+    If Len(caseRoot) > 0 Then caseChanged = FolioData.RefreshCaseNames(caseRoot)
 
-    ' If both collections are the same object (cache hit), skip diff detection
-    If m_allMailRecords Is prevMailRef And m_folderRecords Is prevCaseRef Then
-        ' Still update the current tab display for the selected record
-        If m_currentRecIdx > 0 Then UpdateMailTab: UpdateFilesTab
-        Exit Sub
+    ' --- Mail: log add / delete ---
+    If mailChanged And m_initialLoadDone Then
+        Dim ma As Object: Set ma = FolioData.GetMailAdded()
+        Dim k As Variant
+        For Each k In ma.keys
+            AddLogLine m_currentSource, "", "mail", "", CStr(ma(k)), "add"
+        Next k
+        Dim mr As Object: Set mr = FolioData.GetMailRemoved()
+        For Each k In mr.keys
+            AddLogLine m_currentSource, "", "mail", "", CStr(mr(k)), "delete"
+        Next k
     End If
 
-    Dim i As Long
-
-    ' --- Mail: new / delete ---
-    Dim currentMailIds As Object: Set currentMailIds = CreateObject("Scripting.Dictionary")
-    For i = 1 To m_allMailRecords.Count
-        Dim mRec As Object: Set mRec = m_allMailRecords(i)
-        Dim eid As String: eid = FolioHelpers.DictStr(mRec, "entry_id")
-        If Len(eid) > 0 Then
-            Dim mailLabel As String: mailLabel = FolioHelpers.DictStr(mRec, "subject") & " - " & FolioHelpers.DictStr(mRec, "sender_email")
-            currentMailIds.Add eid, mailLabel
-            If m_initialLoadDone And Not m_mailEntryIds.Exists(eid) Then
-                AddLogLine m_currentSource, "", "mail", "", mailLabel, "add"
-            End If
-        End If
-    Next i
-    If m_initialLoadDone Then
-        Dim mKeys As Variant: mKeys = m_mailEntryIds.keys
-        For i = 0 To m_mailEntryIds.Count - 1
-            If Not currentMailIds.Exists(mKeys(i)) Then
-                AddLogLine m_currentSource, "", "mail", "", CStr(m_mailEntryIds(mKeys(i))), "delete"
-            End If
-        Next i
+    ' --- Case folders: log add / delete ---
+    If caseChanged And m_initialLoadDone Then
+        Dim ca As Object: Set ca = FolioData.GetCaseAdded()
+        For Each k In ca.keys
+            AddLogLine m_currentSource, CStr(k), "file", "", "", "add"
+        Next k
+        Dim cr As Object: Set cr = FolioData.GetCaseRemoved()
+        For Each k In cr.keys
+            AddLogLine m_currentSource, CStr(k), "file", "", "", "delete"
+        Next k
     End If
-    Set m_mailEntryIds = currentMailIds
 
-    ' --- Files: add / delete (case folder level) ---
-    Dim currentCaseIds As Object: Set currentCaseIds = CreateObject("Scripting.Dictionary")
-    For i = 1 To m_folderRecords.Count
-        Dim fRec As Object: Set fRec = m_folderRecords(i)
-        Dim cid As String: cid = FolioHelpers.DictStr(fRec, "case_id")
-        If Len(cid) > 0 And Not currentCaseIds.Exists(cid) Then
-            currentCaseIds.Add cid, True
-            If m_initialLoadDone And Not m_caseIds.Exists(cid) Then
-                AddLogLine m_currentSource, cid, "file", "", "", "add"
-            End If
-        End If
-    Next i
-    If m_initialLoadDone Then
-        Dim fKeys As Variant: fKeys = m_caseIds.keys
-        For i = 0 To m_caseIds.Count - 1
-            If Not currentCaseIds.Exists(fKeys(i)) Then
-                AddLogLine m_currentSource, CStr(fKeys(i)), "file", "", "", "delete"
-            End If
-        Next i
-    End If
-    Set m_caseIds = currentCaseIds
-
+    ' Update tabs only when data changed
     If m_currentRecIdx > 0 Then
-        UpdateMailTab
-        UpdateFilesTab
+        If mailChanged Then UpdateMailTab
+        If caseChanged Then UpdateFilesTab
     End If
     On Error GoTo 0
 End Sub
@@ -1474,7 +1438,7 @@ Private Sub m_lstMail_Click()
     If m_lstMail Is Nothing Then Exit Sub
     Dim idx As Long: idx = m_lstMail.ListIndex
     If idx < 0 Or idx >= m_matchedMails.Count Then Exit Sub
-    Dim mr As Object: Set mr = m_matchedMails(idx + 1)
+    Dim mr As Object: Set mr = m_matchedMailArr(idx)
     m_lblSubject.Caption = DictStr(mr, "subject")
     m_lblFrom.Caption = DictStr(mr, "sender_email")
     m_lblDate.Caption = DictStr(mr, "received_at")
@@ -1487,11 +1451,12 @@ Private Sub m_lstMail_Click()
     m_lstAttach.Clear
     Dim aps As Object: Set aps = DictObj(mr, "attachment_paths")
     If Not aps Is Nothing Then
-        If TypeName(aps) = "Collection" Then
+        If TypeName(aps) = "Dictionary" And aps.Count > 0 Then
+            Dim apKeys As Variant: apKeys = aps.keys
+            Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
             Dim ai As Long
-            For ai = 1 To aps.Count
-                Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
-                m_lstAttach.AddItem fso.GetFileName(CStr(aps(ai)))
+            For ai = 0 To aps.Count - 1
+                m_lstAttach.AddItem fso.GetFileName(CStr(apKeys(ai)))
             Next ai
         End If
     End If
@@ -1505,7 +1470,7 @@ Private Sub m_lstMail_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
     If m_lstMail Is Nothing Then Exit Sub
     Dim idx As Long: idx = m_lstMail.ListIndex
     If idx < 0 Or idx >= m_matchedMails.Count Then Exit Sub
-    Dim mr As Object: Set mr = m_matchedMails(idx + 1)
+    Dim mr As Object: Set mr = m_matchedMailArr(idx)
     Dim msgPath As String: msgPath = DictStr(mr, "msg_path")
     If Len(msgPath) > 0 And FileExists(msgPath) Then ThisWorkbook.FollowHyperlink msgPath
     eh.OK: Exit Sub
@@ -1519,10 +1484,13 @@ Private Sub m_lstAttach_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
     Dim mi As Long: mi = m_lstMail.ListIndex
     Dim ai As Long: ai = m_lstAttach.ListIndex
     If mi < 0 Or ai < 0 Then Exit Sub
-    Dim mr As Object: Set mr = m_matchedMails(mi + 1)
+    Dim mr As Object: Set mr = m_matchedMailArr(mi)
     Dim aps As Object: Set aps = DictObj(mr, "attachment_paths")
     If aps Is Nothing Then Exit Sub
-    If ai + 1 <= aps.Count Then ThisWorkbook.FollowHyperlink CStr(aps(ai + 1))
+    If TypeName(aps) = "Dictionary" And ai < aps.Count Then
+        Dim attKeys As Variant: attKeys = aps.keys
+        ThisWorkbook.FollowHyperlink CStr(attKeys(ai))
+    End If
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -1594,9 +1562,7 @@ Private Sub CleanupRefs()
     Set m_currentTable = Nothing
     Set m_filteredRows = Nothing
     Set m_fieldEditors = Nothing
-    Set m_allMailRecords = Nothing
     Set m_matchedMails = Nothing
-    Set m_folderRecords = Nothing
     Set m_fileTreeItems = Nothing
     Set m_undoStack = Nothing
     On Error GoTo 0

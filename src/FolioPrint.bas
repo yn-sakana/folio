@@ -67,12 +67,11 @@ ErrHandler: eh.Catch
 End Sub
 
 ' Print mail body and attachments
-Public Sub PrintMailFiles(matchedMails As Collection, mailIdx As Long)
-    Dim eh As New ErrorHandler: eh.Enter "FolioPrint", "PrintMailFiles"
+Public Sub PrintMailRecord(mr As Object)
+    Dim eh As New ErrorHandler: eh.Enter "FolioPrint", "PrintMailRecord"
     On Error GoTo ErrHandler
-    If mailIdx < 1 Or mailIdx > matchedMails.Count Then Exit Sub
+    If mr Is Nothing Then Exit Sub
 
-    Dim mr As Object: Set mr = matchedMails(mailIdx)
     Dim subject As String: subject = FolioHelpers.DictStr(mr, "subject")
 
     ' Print mail body
@@ -85,10 +84,11 @@ Public Sub PrintMailFiles(matchedMails As Collection, mailIdx As Long)
     ' Print attachments
     Dim aps As Object: Set aps = FolioHelpers.DictObj(mr, "attachment_paths")
     If Not aps Is Nothing Then
-        If TypeName(aps) = "Collection" Then
+        If TypeName(aps) = "Dictionary" And aps.Count > 0 Then
+            Dim apKeys As Variant: apKeys = aps.keys
             Dim ai As Long
-            For ai = 1 To aps.Count
-                PrintFile CStr(aps(ai)), subject
+            For ai = 0 To aps.Count - 1
+                PrintFile CStr(apKeys(ai)), subject
                 DoEvents
             Next ai
         End If
