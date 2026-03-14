@@ -607,3 +607,143 @@ Private Function GetDomain(email As String) As String
     Dim pos As Long: pos = InStr(email, "@")
     If pos > 0 Then GetDomain = Mid$(email, pos + 1) Else GetDomain = email
 End Function
+
+' ============================================================================
+' Cache Access (for Worker serialization / FE cache load)
+' ============================================================================
+
+Public Function GetMailRecords() As Object
+    If m_mailRecords Is Nothing Then Set m_mailRecords = FolioHelpers.NewDict()
+    Set GetMailRecords = m_mailRecords
+End Function
+
+Public Function GetCaseNames() As Object
+    If m_caseNames Is Nothing Then Set m_caseNames = FolioHelpers.NewDict()
+    Set GetCaseNames = m_caseNames
+End Function
+
+Public Function GetMailByEntryId() As Object
+    If m_mailByEntryId Is Nothing Then Set m_mailByEntryId = FolioHelpers.NewDict()
+    Set GetMailByEntryId = m_mailByEntryId
+End Function
+
+' Load full mail cache from 2D Variant array (Col A=folder_path, Col B=record JSON)
+' Used on initial load from worker cache sheet
+Public Sub LoadMailFromCache(data As Variant)
+    Dim eh As New ErrorHandler: eh.Enter "FolioData", "LoadMailFromCache"
+    On Error GoTo ErrHandler
+
+    Set m_mailRecords = FolioHelpers.NewDict()
+    Set m_mailByEntryId = FolioHelpers.NewDict()
+
+    If IsEmpty(data) Then GoTo Rebuild
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim fp As String: fp = CStr(data(i, 1))
+        If Len(fp) = 0 Then GoTo NextMailRow
+        Dim rec As Object: Set rec = FolioHelpers.ParseJson(CStr(data(i, 2)))
+        If Not rec Is Nothing Then
+            Set m_mailRecords(fp) = rec
+            Dim eid As String: eid = FolioHelpers.DictStr(rec, "entry_id")
+            If Len(eid) > 0 Then Set m_mailByEntryId(eid) = rec
+        End If
+NextMailRow:
+    Next i
+
+Rebuild:
+    RebuildMailIndex
+    m_mailDiffReady = True
+    Set m_mailAdded = FolioHelpers.NewDict()
+    Set m_mailRemoved = FolioHelpers.NewDict()
+    eh.OK: Exit Sub
+ErrHandler: eh.Catch
+End Sub
+
+' Load full case names from 2D Variant array (Col A=folder_name)
+Public Sub LoadCaseNamesFromCache(data As Variant)
+    Dim eh As New ErrorHandler: eh.Enter "FolioData", "LoadCaseNamesFromCache"
+    On Error GoTo ErrHandler
+
+    Set m_caseNames = FolioHelpers.NewDict()
+    If IsEmpty(data) Then GoTo Done
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim nm As String: nm = CStr(data(i, 1))
+        If Len(nm) > 0 Then m_caseNames(nm) = True
+    Next i
+
+Done:
+    m_caseDiffReady = True
+    Set m_caseAdded = FolioHelpers.NewDict()
+    Set m_caseRemoved = FolioHelpers.NewDict()
+    eh.OK: Exit Sub
+ErrHandler: eh.Catch
+End Sub
+
+' Apply incremental mail diff from 2D Variant array
+' Columns: A=type("mail"), B=action("add"/"delete"), C=entry_id, D=label, E=folder_path, F=record_json
+Public Sub ApplyMailDiff(diffData As Variant)
+    Dim eh As New ErrorHandler: eh.Enter "FolioData", "ApplyMailDiff"
+    On Error GoTo ErrHandler
+    If IsEmpty(diffData) Then eh.OK: Exit Sub
+    If m_mailRecords Is Nothing Then Set m_mailRecords = FolioHelpers.NewDict()
+    If m_mailByEntryId Is Nothing Then Set m_mailByEntryId = FolioHelpers.NewDict()
+
+    Dim i As Long
+    For i = 1 To UBound(diffData, 1)
+        If CStr(diffData(i, 1)) <> "mail" Then GoTo NextDiffRow
+        Dim action As String: action = CStr(diffData(i, 2))
+        Dim eid2 As String: eid2 = CStr(diffData(i, 3))
+
+        If action = "add" Then
+            Dim fp2 As String: fp2 = CStr(diffData(i, 5))
+            Dim json2 As String: json2 = CStr(diffData(i, 6))
+            If Len(fp2) > 0 And Len(json2) > 0 Then
+                Dim addRec As Object: Set addRec = FolioHelpers.ParseJson(json2)
+                If Not addRec Is Nothing Then
+                    Set m_mailRecords(fp2) = addRec
+                    If Len(eid2) > 0 Then
+                        Set m_mailByEntryId(eid2) = addRec
+                        AddToMailIndex addRec, eid2
+                    End If
+                End If
+            End If
+        ElseIf action = "delete" Then
+            If Len(eid2) > 0 And m_mailByEntryId.Exists(eid2) Then
+                Dim delRec As Object: Set delRec = m_mailByEntryId(eid2)
+                RemoveFromMailIndex delRec, eid2
+                m_mailByEntryId.Remove eid2
+                ' Remove from m_mailRecords by folder_path
+                Dim mf As String: mf = FolioHelpers.DictStr(delRec, "_mail_folder")
+                If Len(mf) > 0 And m_mailRecords.Exists(mf) Then m_mailRecords.Remove mf
+            End If
+        End If
+NextDiffRow:
+    Next i
+    eh.OK: Exit Sub
+ErrHandler: eh.Catch
+End Sub
+
+' Apply incremental case diff from 2D Variant array
+' Columns: A=type("case"), B=action("add"/"delete"), C=case_id
+Public Sub ApplyCaseDiff(diffData As Variant)
+    Dim eh As New ErrorHandler: eh.Enter "FolioData", "ApplyCaseDiff"
+    On Error GoTo ErrHandler
+    If IsEmpty(diffData) Then eh.OK: Exit Sub
+    If m_caseNames Is Nothing Then Set m_caseNames = FolioHelpers.NewDict()
+
+    Dim i As Long
+    For i = 1 To UBound(diffData, 1)
+        If CStr(diffData(i, 1)) <> "case" Then GoTo NextCaseDiff
+        Dim action As String: action = CStr(diffData(i, 2))
+        Dim cid As String: cid = CStr(diffData(i, 3))
+        If action = "add" And Len(cid) > 0 Then
+            m_caseNames(cid) = True
+        ElseIf action = "delete" And Len(cid) > 0 Then
+            If m_caseNames.Exists(cid) Then m_caseNames.Remove cid
+        End If
+NextCaseDiff:
+    Next i
+    eh.OK: Exit Sub
+ErrHandler: eh.Catch
+End Sub

@@ -52,6 +52,9 @@ Private m_fieldEditors As Collection
 Private m_matchedMails As Object    ' Dict from FindMailRecords
 Private m_matchedMailArr As Variant ' = m_matchedMails.Items (for indexed access)
 Private m_watcher As SheetWatcher
+Private m_workerWatcher As WorkerWatcher
+Private m_workerInitialLoad As Boolean
+Private m_workerLastVersion As Long
 Private m_inPoll As Boolean
 Private m_fileTreeItems As Collection
 Private m_undoStack As Collection
@@ -517,17 +520,33 @@ Private Sub SwitchSource(sourceName As String)
     FolioConfig.EnsureSource sourceName
     FolioConfig.InitFieldSettingsFromTable sourceName, m_currentTable
 
-    ' Load data into FolioData cache (initial scan, diffs suppressed)
+    ' Mail / Case config
     Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
-    If Len(mailFolder) > 0 Then FolioData.RefreshMailData mailFolder
     Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
-    If Len(caseRoot) > 0 Then FolioData.RefreshCaseNames caseRoot
-
-    ' Build search index for mail matching
     Dim mailMatchField As String: mailMatchField = FolioConfig.GetSourceStr(sourceName, "mail_match_field")
     If Len(mailMatchField) = 0 Then mailMatchField = "sender_email"
     Dim mailMatchMode As String: mailMatchMode = FolioConfig.GetSourceStr(sourceName, "mail_match_mode", "exact")
+
+    ' Start or reconfigure background worker
+    m_workerInitialLoad = False
+    m_workerLastVersion = 0
+    FolioData.ClearCache
+    ' Configure FE-side mail search index AFTER ClearCache (needed for FindMailRecords)
     FolioData.SetMailMatchConfig mailMatchField, mailMatchMode
+    If FolioMain.g_workerApp Is Nothing Then
+        FolioMain.StartWorker mailFolder, caseRoot, mailMatchField, mailMatchMode
+        ' Attach watcher to worker Excel instance
+        If Not FolioMain.g_workerApp Is Nothing Then
+            If Not m_workerWatcher Is Nothing Then m_workerWatcher.StopWatching
+            Set m_workerWatcher = New WorkerWatcher
+            m_workerWatcher.Watch FolioMain.g_workerApp, Me
+        End If
+    Else
+        ' Worker already running — reconfigure
+        On Error Resume Next
+        FolioMain.g_workerApp.Run "FolioWorker.UpdateConfig", mailFolder, caseRoot, mailMatchField, mailMatchMode
+        On Error GoTo ErrHandler
+    End If
 
     BuildFieldEditors
     BuildJoinedTabs
@@ -536,7 +555,9 @@ Private Sub SwitchSource(sourceName As String)
     LoadChangeLog
     m_initialLoadDone = True
     eh.OK: Exit Sub
-ErrHandler: eh.Catch
+ErrHandler:
+    m_loading = False
+    eh.Catch
 End Sub
 
 ' ============================================================================
@@ -1296,6 +1317,101 @@ Public Sub OnTableChanged()
 End Sub
 
 ' ============================================================================
+' Worker Signal (via WorkerWatcher)
+' ============================================================================
+
+Public Sub OnWorkerSignal(cacheWb As Workbook)
+    On Error Resume Next
+    If m_loading Then Exit Sub
+
+    ' Read current version from signal sheet
+    Dim ver As Long: ver = CLng(cacheWb.Worksheets("_signal").Cells(1, 1).Value)
+    Dim doFullLoad As Boolean
+    doFullLoad = (Not m_workerInitialLoad) Or (ver > m_workerLastVersion + 1)
+    m_workerLastVersion = ver
+
+    If doFullLoad Then
+        ' Full cache load from _mail and _cases sheets
+        Dim mailWs As Worksheet: Set mailWs = cacheWb.Worksheets("_mail")
+        Dim mailData As Variant
+        If mailWs.UsedRange.Rows.Count > 0 And Len(mailWs.Cells(1, 1).Value) > 0 Then
+            mailData = mailWs.UsedRange.Value
+        End If
+        FolioData.LoadMailFromCache mailData
+
+        Dim casesWs As Worksheet: Set casesWs = cacheWb.Worksheets("_cases")
+        Dim caseData As Variant
+        If casesWs.UsedRange.Rows.Count > 0 And Len(casesWs.Cells(1, 1).Value) > 0 Then
+            caseData = casesWs.UsedRange.Value
+        End If
+        FolioData.LoadCaseNamesFromCache caseData
+
+        If Not m_workerInitialLoad Then
+            m_workerInitialLoad = True
+            If Not m_lblStatus Is Nothing Then m_lblStatus.Caption = "  Worker connected"
+        End If
+
+        ' Update all tabs
+        If m_currentRecIdx > 0 Then
+            UpdateMailTab
+            UpdateFilesTab
+        End If
+    Else
+        ' Incremental update from _diff sheet
+        Dim diffWs As Worksheet: Set diffWs = cacheWb.Worksheets("_diff")
+        Dim diffData As Variant
+        If diffWs.UsedRange.Rows.Count > 0 And Len(diffWs.Cells(1, 1).Value) > 0 Then
+            diffData = diffWs.UsedRange.Value
+        Else
+            Exit Sub  ' No diff data
+        End If
+
+        ' Apply diffs to FolioData cache
+        Dim mailChanged As Boolean: mailChanged = False
+        Dim caseChanged As Boolean: caseChanged = False
+        Dim r As Long
+        For r = 1 To UBound(diffData, 1)
+            Dim diffType As String: diffType = CStr(diffData(r, 1))
+            If diffType = "mail" Then mailChanged = True
+            If diffType = "case" Then caseChanged = True
+        Next r
+
+        If mailChanged Then FolioData.ApplyMailDiff diffData
+        If caseChanged Then FolioData.ApplyCaseDiff diffData
+
+        ' Log changes
+        If m_initialLoadDone Then
+            For r = 1 To UBound(diffData, 1)
+                Dim dType As String: dType = CStr(diffData(r, 1))
+                Dim dAction As String: dAction = CStr(diffData(r, 2))
+                Dim dKey As String: dKey = CStr(diffData(r, 3))
+                Dim dLabel As String: dLabel = CStr(diffData(r, 4))
+                If dType = "mail" Then
+                    AddLogLine m_currentSource, "", "mail", "", dLabel, dAction
+                ElseIf dType = "case" Then
+                    AddLogLine m_currentSource, dKey, "file", "", "", dAction
+                End If
+            Next r
+        End If
+
+        ' Update tabs only when data changed
+        If m_currentRecIdx > 0 Then
+            If mailChanged Then UpdateMailTab
+            If caseChanged Then UpdateFilesTab
+        End If
+    End If
+    On Error GoTo 0
+End Sub
+
+Public Sub OnWorkerDisconnected()
+    On Error Resume Next
+    If Not m_lblStatus Is Nothing Then m_lblStatus.Caption = "  Worker disconnected"
+    Set m_workerWatcher = Nothing
+    Set FolioMain.g_workerApp = Nothing
+    On Error GoTo 0
+End Sub
+
+' ============================================================================
 ' Poll Cycle
 ' ============================================================================
 
@@ -1309,7 +1425,7 @@ Public Sub DoPollCycle()
         RepositionControls
     End If
     If Not m_lblClock Is Nothing Then m_lblClock.Caption = Format$(Now, "hh:nn:ss")
-    If Len(m_currentSource) > 0 And Not m_loading Then RefreshJoinedData
+    ' Data refresh is handled by background worker via OnWorkerSignal
 PollExit:
     m_inPoll = False
 End Sub
@@ -1327,50 +1443,6 @@ Private Sub RefreshCurrentRecord()
     On Error GoTo 0
 End Sub
 
-Private Sub RefreshJoinedData()
-    On Error Resume Next
-
-    ' Incremental refresh via FolioData (cache-based, lightweight)
-    Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
-    Dim mailChanged As Boolean
-    If Len(mailFolder) > 0 Then mailChanged = FolioData.RefreshMailData(mailFolder)
-
-    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
-    Dim caseChanged As Boolean
-    If Len(caseRoot) > 0 Then caseChanged = FolioData.RefreshCaseNames(caseRoot)
-
-    ' --- Mail: log add / delete ---
-    If mailChanged And m_initialLoadDone Then
-        Dim ma As Object: Set ma = FolioData.GetMailAdded()
-        Dim k As Variant
-        For Each k In ma.keys
-            AddLogLine m_currentSource, "", "mail", "", CStr(ma(k)), "add"
-        Next k
-        Dim mr As Object: Set mr = FolioData.GetMailRemoved()
-        For Each k In mr.keys
-            AddLogLine m_currentSource, "", "mail", "", CStr(mr(k)), "delete"
-        Next k
-    End If
-
-    ' --- Case folders: log add / delete ---
-    If caseChanged And m_initialLoadDone Then
-        Dim ca As Object: Set ca = FolioData.GetCaseAdded()
-        For Each k In ca.keys
-            AddLogLine m_currentSource, CStr(k), "file", "", "", "add"
-        Next k
-        Dim cr As Object: Set cr = FolioData.GetCaseRemoved()
-        For Each k In cr.keys
-            AddLogLine m_currentSource, CStr(k), "file", "", "", "delete"
-        Next k
-    End If
-
-    ' Update tabs only when data changed
-    If m_currentRecIdx > 0 Then
-        If mailChanged Then UpdateMailTab
-        If caseChanged Then UpdateFilesTab
-    End If
-    On Error GoTo 0
-End Sub
 
 ' ============================================================================
 ' Event Handlers
@@ -1559,6 +1631,9 @@ Private Sub CleanupRefs()
     Unload frmResize
     If Not m_watcher Is Nothing Then m_watcher.StopWatching
     Set m_watcher = Nothing
+    If Not m_workerWatcher Is Nothing Then m_workerWatcher.StopWatching
+    Set m_workerWatcher = Nothing
+    FolioMain.StopWorker
     Set m_currentTable = Nothing
     Set m_filteredRows = Nothing
     Set m_fieldEditors = Nothing
