@@ -5,6 +5,7 @@ Public g_forceClose As Boolean
 Public g_formLoaded As Boolean
 Public g_workerApp As Object
 Public g_workerWb As Object    ' BE's workbook (for FE→BE requests via _folio_request)
+Private g_requestId As Long
 
 ' --- Entry Points ---
 
@@ -74,8 +75,6 @@ Private Sub EnsureHiddenSheet(wb As Workbook, shName As String)
 End Sub
 
 ' --- FE→BE Request ---
-
-Private g_requestId As Long
 
 ' Send a request to BE via _folio_request sheet.
 ' BE's Workbook_SheetChange dispatches to FolioWorker.ProcessRequest.
