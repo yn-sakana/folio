@@ -2,7 +2,16 @@ Attribute VB_Name = "FolioChangeLog"
 Option Explicit
 
 Private Const LOG_SHEET As String = "_folio_log"
+Private Const LOG_TABLE As String = "FolioLog"
 Private Const MAX_LOG_ROWS As Long = 5000
+
+Private Function GetLogTable() As ListObject
+    On Error Resume Next
+    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(LOG_SHEET)
+    If ws Is Nothing Then Exit Function
+    Set GetLogTable = ws.ListObjects(LOG_TABLE)
+    On Error GoTo 0
+End Function
 
 Public Sub EnsureLogSheet()
     Dim eh As New ErrorHandler: eh.Enter "FolioChangeLog", "EnsureLogSheet"
@@ -16,13 +25,13 @@ Public Sub EnsureLogSheet()
         Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
         ws.Name = LOG_SHEET
         ws.Visible = xlSheetVeryHidden
-        ws.Range("A1").Value = "timestamp"
-        ws.Range("B1").Value = "source"
-        ws.Range("C1").Value = "key"
-        ws.Range("D1").Value = "field"
-        ws.Range("E1").Value = "old_value"
-        ws.Range("F1").Value = "new_value"
-        ws.Range("G1").Value = "origin"
+    End If
+    ' Ensure ListObject exists
+    If ws.ListObjects.Count = 0 Then
+        Dim headers As Variant: headers = Array("timestamp", "source", "key", "field", "old_value", "new_value", "origin")
+        Dim c As Long
+        For c = 0 To 6: ws.Cells(1, c + 1).Value = headers(c): Next c
+        ws.ListObjects.Add(xlSrcRange, ws.Range("A1:G1"), , xlYes).Name = LOG_TABLE
     End If
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -32,49 +41,33 @@ Public Sub AddLogEntry(src As String, key As String, field As String, _
                        oldVal As String, newVal As String, origin As String)
     Dim eh As New ErrorHandler: eh.Enter "FolioChangeLog", "AddLogEntry"
     On Error GoTo ErrHandler
-    EnsureLogSheet
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(LOG_SHEET)
-    Dim nextRow As Long
-    nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+    Dim tbl As ListObject: Set tbl = GetLogTable()
+    If tbl Is Nothing Then EnsureLogSheet: Set tbl = GetLogTable()
+    If tbl Is Nothing Then Exit Sub
 
-    ' Rotate if too many rows
-    If nextRow > MAX_LOG_ROWS + 1 Then
-        Dim delRows As Long: delRows = nextRow - MAX_LOG_ROWS - 1
-        ws.Rows("2:" & (delRows + 1)).Delete
-        nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
-    End If
-
-    ws.Cells(nextRow, 1).Value = Format$(Now, "yyyy-mm-dd hh:nn:ss")
-    ws.Cells(nextRow, 2).Value = src
-    ws.Cells(nextRow, 3).Value = key
-    ws.Cells(nextRow, 4).Value = field
-    ws.Cells(nextRow, 5).Value = oldVal
-    ws.Cells(nextRow, 6).Value = newVal
-    ws.Cells(nextRow, 7).Value = origin
+    RotateIfNeeded tbl, 1
+    Dim lr As ListRow: Set lr = tbl.ListRows.Add
+    lr.Range(1, 1).Value = Format$(Now, "yyyy-mm-dd hh:nn:ss")
+    lr.Range(1, 2).Value = src
+    lr.Range(1, 3).Value = key
+    lr.Range(1, 4).Value = field
+    lr.Range(1, 5).Value = oldVal
+    lr.Range(1, 6).Value = newVal
+    lr.Range(1, 7).Value = origin
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
 
-' Batch version: write multiple log entries in one Range.Value operation
 Public Sub AddLogEntries(entries As Collection)
     If entries Is Nothing Then Exit Sub
     If entries.Count = 0 Then Exit Sub
     On Error GoTo ErrHandler
-    EnsureLogSheet
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(LOG_SHEET)
-    Dim nextRow As Long
-    nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+    Dim tbl As ListObject: Set tbl = GetLogTable()
+    If tbl Is Nothing Then EnsureLogSheet: Set tbl = GetLogTable()
+    If tbl Is Nothing Then Exit Sub
 
-    ' Rotate if needed
-    If nextRow + entries.Count > MAX_LOG_ROWS + 1 Then
-        Dim delRows As Long: delRows = (nextRow + entries.Count) - MAX_LOG_ROWS - 1
-        If delRows > 0 Then
-            ws.Rows("2:" & (delRows + 1)).Delete
-            nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
-        End If
-    End If
+    RotateIfNeeded tbl, entries.Count
 
-    ' Build 2D array
     Dim n As Long: n = entries.Count
     Dim data() As Variant: ReDim data(1 To n, 1 To 7)
     Dim ts As String: ts = Format$(Now, "yyyy-mm-dd hh:nn:ss")
@@ -92,37 +85,56 @@ Public Sub AddLogEntries(entries As Collection)
         data(i, 7) = "external"
     Next i
 
-    ' Single Range.Value write
-    ws.Cells(nextRow, 1).Resize(n, 7).Value = data
+    ' Add rows and batch write
+    Dim startRow As Long
+    If tbl.DataBodyRange Is Nothing Then
+        tbl.ListRows.Add
+        startRow = 1
+    Else
+        startRow = tbl.ListRows.Count + 1
+    End If
+    ' Add remaining rows
+    For i = 2 To n: tbl.ListRows.Add: Next i
+    tbl.DataBodyRange.Rows(startRow).Resize(n, 7).Value = data
     Exit Sub
 ErrHandler:
+End Sub
+
+Private Sub RotateIfNeeded(tbl As ListObject, addCount As Long)
+    On Error Resume Next
+    If tbl.DataBodyRange Is Nothing Then Exit Sub
+    Dim total As Long: total = tbl.ListRows.Count + addCount
+    If total <= MAX_LOG_ROWS Then Exit Sub
+    Dim delCount As Long: delCount = total - MAX_LOG_ROWS
+    Dim i As Long
+    For i = 1 To delCount: tbl.ListRows(1).Delete: Next i
+    On Error GoTo 0
 End Sub
 
 Public Function GetRecentEntries(Optional count As Long = 200) As Collection
     Dim eh As New ErrorHandler: eh.Enter "FolioChangeLog", "GetRecentEntries"
     On Error GoTo ErrHandler
     Set GetRecentEntries = New Collection
-    EnsureLogSheet
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(LOG_SHEET)
-    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    If lastRow < 2 Then
-        eh.OK: Exit Function
-    End If
+    Dim tbl As ListObject: Set tbl = GetLogTable()
+    If tbl Is Nothing Then eh.OK: Exit Function
+    If tbl.DataBodyRange Is Nothing Then eh.OK: Exit Function
 
-    Dim startRow As Long
-    startRow = lastRow - count + 1
-    If startRow < 2 Then startRow = 2
+    Dim rowCount As Long: rowCount = tbl.ListRows.Count
+    If rowCount = 0 Then eh.OK: Exit Function
+    Dim startIdx As Long: startIdx = rowCount - count + 1
+    If startIdx < 1 Then startIdx = 1
 
     Dim r As Long
-    For r = lastRow To startRow Step -1
+    For r = rowCount To startIdx Step -1
+        Dim rng As Range: Set rng = tbl.ListRows(r).Range
         Dim entry As Object: Set entry = FolioHelpers.NewDict()
-        entry.Add "ts", CStr(ws.Cells(r, 1).Value)
-        entry.Add "src", CStr(ws.Cells(r, 2).Value)
-        entry.Add "key", CStr(ws.Cells(r, 3).Value)
-        entry.Add "field", CStr(ws.Cells(r, 4).Value)
-        entry.Add "old", CStr(ws.Cells(r, 5).Value)
-        entry.Add "new", CStr(ws.Cells(r, 6).Value)
-        entry.Add "origin", CStr(ws.Cells(r, 7).Value)
+        entry.Add "ts", CStr(rng(1, 1).Value)
+        entry.Add "src", CStr(rng(1, 2).Value)
+        entry.Add "key", CStr(rng(1, 3).Value)
+        entry.Add "field", CStr(rng(1, 4).Value)
+        entry.Add "old", CStr(rng(1, 5).Value)
+        entry.Add "new", CStr(rng(1, 6).Value)
+        entry.Add "origin", CStr(rng(1, 7).Value)
         GetRecentEntries.Add entry
     Next r
     eh.OK: Exit Function
@@ -132,20 +144,17 @@ End Function
 Public Sub ClearLog()
     Dim eh As New ErrorHandler: eh.Enter "FolioChangeLog", "ClearLog"
     On Error GoTo ErrHandler
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(LOG_SHEET)
-    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    If lastRow >= 2 Then ws.Rows("2:" & lastRow).Delete
+    Dim tbl As ListObject: Set tbl = GetLogTable()
+    If tbl Is Nothing Then Exit Sub
+    If Not tbl.DataBodyRange Is Nothing Then tbl.DataBodyRange.Delete
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
 
 Public Function FormatLogLine(entry As Object) As String
-    Dim eh As New ErrorHandler: eh.Enter "FolioChangeLog", "FormatLogLine"
-    On Error GoTo ErrHandler
-    Dim ts As String: ts = FolioHelpers.DictStr(entry, "ts")
     On Error Resume Next
+    Dim ts As String: ts = FolioHelpers.DictStr(entry, "ts")
     If IsDate(ts) Then ts = Format$(CDate(ts), "hh:nn:ss")
-    On Error GoTo ErrHandler
 
     Dim origin As String: origin = FolioHelpers.DictStr(entry, "origin")
     Dim key As String: key = FolioHelpers.DictStr(entry, "key")
@@ -162,6 +171,5 @@ Public Function FormatLogLine(entry As Object) As String
     If Len(nm) > 0 And nm <> key Then id = id & " " & nm
 
     FormatLogLine = ts & "  " & origin & "  " & id & "  " & change
-    eh.OK: Exit Function
-ErrHandler: eh.Catch
+    On Error GoTo 0
 End Function

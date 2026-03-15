@@ -206,7 +206,7 @@ End Sub
     $fldSheet.Range("E1").Value2 = "editable"
     $fldSheet.Range("F1").Value2 = "multiline"
 
-    # _folio_log
+    # _folio_log (with ListObject table)
     $logSheet = $wb.Worksheets.Add([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))
     $logSheet.Name = "_folio_log"
     $logSheet.Visible = 2  # xlSheetVeryHidden
@@ -217,6 +217,8 @@ End Sub
     $logSheet.Range("E1").Value2 = "old_value"
     $logSheet.Range("F1").Value2 = "new_value"
     $logSheet.Range("G1").Value2 = "origin"
+    $logTable = $logSheet.ListObjects.Add(1, $logSheet.Range("A1:G1"), $null, 1)  # xlSrcRange, xlYes
+    $logTable.Name = "FolioLog"
 
     Write-Host "  config: mail=$mailDir, cases=$casesDir" -ForegroundColor Green
 
