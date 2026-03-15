@@ -31,7 +31,6 @@ Private WithEvents m_lstFiles As MSForms.ListBox
 ' Non-event controls
 Private m_lblStatus As MSForms.Label
 Private m_lblCount As MSForms.Label
-Private m_lblClock As MSForms.Label
 Private m_lstLog As MSForms.ListBox
 Private m_lblSubject As MSForms.Label
 Private m_lblFrom As MSForms.Label
@@ -170,18 +169,11 @@ Private Sub BuildLayout()
     m_lblCount.SpecialEffect = fmSpecialEffectFlat
     m_lblCount.BorderStyle = fmBorderStyleSingle
     m_lblCount.Caption = "  0 records"
-    Dim clockW As Single: clockW = 60
-    Set m_lblStatus = AddLabel(Me, "lblStatus", m_leftW + M * 2, sbTop, cw - m_leftW - M * 2 - clockW, 16)
+    Set m_lblStatus = AddLabel(Me, "lblStatus", m_leftW + M * 2, sbTop, cw - m_leftW - M * 2, 16)
     m_lblStatus.BackColor = &HF0F0F0
     m_lblStatus.SpecialEffect = fmSpecialEffectFlat
     m_lblStatus.BorderStyle = fmBorderStyleSingle
     m_lblStatus.Caption = "  Ready"
-    Set m_lblClock = AddLabel(Me, "lblClock", cw - clockW, sbTop, clockW, 16)
-    m_lblClock.BackColor = &HF0F0F0
-    m_lblClock.SpecialEffect = fmSpecialEffectFlat
-    m_lblClock.BorderStyle = fmBorderStyleSingle
-    m_lblClock.TextAlign = fmTextAlignCenter
-    m_lblClock.Caption = Format$(Now, "hh:nn:ss")
 
     LoadChangeLog
     eh.OK: Exit Sub
@@ -252,11 +244,9 @@ Private Sub RepositionControls()
 
     ' Status bar
     Dim sbTop As Single: sbTop = ch - 20
-    Dim clockW As Single: clockW = 60
     m_lblCount.Left = M: m_lblCount.Top = sbTop: m_lblCount.Width = m_leftW
     m_lblStatus.Left = m_leftW + M * 2: m_lblStatus.Top = sbTop
-    m_lblStatus.Width = cw - m_leftW - M * 2 - clockW
-    m_lblClock.Left = cw - clockW: m_lblClock.Top = sbTop: m_lblClock.Width = clockW
+    m_lblStatus.Width = cw - m_leftW - M * 2
     ResizeTabContents
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -1203,8 +1193,6 @@ Public Sub OnFolioSheetChange(sheetName As String)
     On Error Resume Next
     Select Case sheetName
         Case "_folio_signal"
-            ' Clock: use FE's own time (SheetChange = BE is alive)
-            If Not m_lblClock Is Nothing Then m_lblClock.Caption = Format$(Now, "hh:nn:ss")
             ' Version from local sheet
             Dim sigSh As Worksheet: Set sigSh = ThisWorkbook.Worksheets("_folio_signal")
             Dim ver As Long: ver = 0

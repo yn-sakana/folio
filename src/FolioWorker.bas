@@ -630,9 +630,6 @@ Public Sub YieldCallback()
     If Not g_active Then Exit Sub
     On Error Resume Next
 
-    ' Clock update (replaces ClockCallback)
-    WriteClockToFE
-
     ' Handle pending FE requests
     ProcessRequest
 
@@ -932,11 +929,6 @@ End Sub
 ' Signal/Clock writes to FE
 ' ============================================================================
 
-Private Sub WriteClockToFE()
-    Dim ws As Object: Set ws = FESheet("_folio_signal")
-    If ws Is Nothing Then Exit Sub
-    ws.Range("A1").Value2 = Format$(Now, "hh:nn:ss") & " "
-End Sub
 
 Private Sub WriteVersionToFE(ver As Long)
     Dim ws As Object: Set ws = FESheet("_folio_signal")
