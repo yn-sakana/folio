@@ -48,6 +48,7 @@ Public Sub BeforeWorkbookClose()
     g_forceClose = True
     g_formLoaded = False
     StopWorker
+    FolioConfig.SaveToSheets
 End Sub
 
 ' --- FE Data Sheets ---
