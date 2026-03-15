@@ -61,8 +61,12 @@ try {
     foreach ($comp in $vbProj.VBComponents) { $moduleNames += $comp.Name }
     Test "FolioMain exists" ($moduleNames -contains "FolioMain")
     Test "FolioData exists" ($moduleNames -contains "FolioData")
-    Test "FolioScanner exists" ($moduleNames -contains "FolioScanner")
+    Test "FolioLib exists" ($moduleNames -contains "FolioLib")
     Test "FolioWorker exists" ($moduleNames -contains "FolioWorker")
+    Test "FolioHelpers removed" (-not ($moduleNames -contains "FolioHelpers"))
+    Test "FolioConfig removed" (-not ($moduleNames -contains "FolioConfig"))
+    Test "FolioChangeLog removed" (-not ($moduleNames -contains "FolioChangeLog"))
+    Test "FolioScanner removed" (-not ($moduleNames -contains "FolioScanner"))
     Test "FolioDraft removed" (-not ($moduleNames -contains "FolioDraft"))
     Test "FolioPrint removed" (-not ($moduleNames -contains "FolioPrint"))
     Test "FolioBundler removed" (-not ($moduleNames -contains "FolioBundler"))
@@ -89,7 +93,7 @@ try {
     Test "_folio_files exists" ($sheetNames -contains "_folio_files")
     Test "_folio_request exists" ($sheetNames -contains "_folio_request")
 
-    # 7. Test FolioScanner directly (in-process, no cross-process worker)
+    # 7. Test FolioWorker scanner directly (in-process, no cross-process worker)
     Write-Host "[7] Reading config..." -ForegroundColor Yellow
     $mailFolder = ""
     $caseRoot = ""
@@ -107,12 +111,12 @@ try {
     Write-Host "  cases=$caseRoot" -ForegroundColor Gray
 
     # 8. Test scanner: RefreshMailData
-    Write-Host "[8] Testing FolioScanner.RefreshMailData..." -ForegroundColor Yellow
+    Write-Host "[8] Testing FolioWorker.RefreshMailData..." -ForegroundColor Yellow
     try {
-        $excel.Run("FolioScanner.SetMailMatchConfig", "sender_email", "exact")
-        $mailChanged = $excel.Run("FolioScanner.RefreshMailData", $mailFolder)
+        $excel.Run("FolioWorker.SetMailMatchConfig", "sender_email", "exact")
+        $mailChanged = $excel.Run("FolioWorker.RefreshMailData", $mailFolder)
         Test "RefreshMailData succeeded" $true
-        $mailRecords = $excel.Run("FolioScanner.GetMailRecords")
+        $mailRecords = $excel.Run("FolioWorker.GetMailRecords")
         $mailCount = $mailRecords.Count
         Test "Mail records loaded" ($mailCount -gt 0) "count=$mailCount"
         Write-Host "  Mail records: $mailCount" -ForegroundColor Gray
@@ -121,11 +125,11 @@ try {
     }
 
     # 9. Test scanner: RefreshCaseNames
-    Write-Host "[9] Testing FolioScanner.RefreshCaseNames..." -ForegroundColor Yellow
+    Write-Host "[9] Testing FolioWorker.RefreshCaseNames..." -ForegroundColor Yellow
     try {
-        $caseChanged = $excel.Run("FolioScanner.RefreshCaseNames", $caseRoot)
+        $caseChanged = $excel.Run("FolioWorker.RefreshCaseNames", $caseRoot)
         Test "RefreshCaseNames succeeded" $true
-        $caseNames = $excel.Run("FolioScanner.GetCaseNames")
+        $caseNames = $excel.Run("FolioWorker.GetCaseNames")
         $caseCount = $caseNames.Count
         Test "Case names loaded" ($caseCount -gt 0) "count=$caseCount"
         Write-Host "  Case names: $caseCount" -ForegroundColor Gray

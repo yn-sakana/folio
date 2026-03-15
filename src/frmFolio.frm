@@ -87,16 +87,16 @@ Private Sub UserForm_Initialize()
     On Error GoTo ErrHandler
     Set m_filteredRows = New Collection
     Set m_fieldEditors = New Collection
-    Set m_matchedMails = FolioHelpers.NewDict()
+    Set m_matchedMails = FolioLib.NewDict()
     Set m_fileTreeItems = New Collection
     Set m_undoStack = New Collection
     m_currentRecIdx = -1
 
-    m_leftW = FolioConfig.GetLng("left_width", 250)
-    m_rightW = FolioConfig.GetLng("right_width", 250)
-    m_fontSize = FolioConfig.GetLng("font_size", 10)
-    Me.Width = FolioConfig.GetLng("window_width", 870)
-    Me.Height = FolioConfig.GetLng("window_height", 540)
+    m_leftW = FolioLib.GetLng("left_width", 250)
+    m_rightW = FolioLib.GetLng("right_width", 250)
+    m_fontSize = FolioLib.GetLng("font_size", 10)
+    Me.Width = FolioLib.GetLng("window_width", 870)
+    Me.Height = FolioLib.GetLng("window_height", 540)
 
     m_loading = True
     eh.Trace "BuildLayout"
@@ -106,14 +106,14 @@ Private Sub UserForm_Initialize()
     eh.Trace "LoadSources"
     LoadSources
 
-    Dim selSrc As String: selSrc = FolioConfig.GetStr("selected_source")
+    Dim selSrc As String: selSrc = FolioLib.GetStr("selected_source")
     If Len(selSrc) > 0 Then
         Dim si As Long
         For si = 0 To m_cmbSource.ListCount - 1
             If m_cmbSource.List(si) = selSrc Then m_cmbSource.ListIndex = si: Exit For
         Next si
     End If
-    m_txtFilter.Text = FolioConfig.GetStr("search_text")
+    m_txtFilter.Text = FolioLib.GetStr("search_text")
 
     m_lastWidth = Me.Width: m_lastHeight = Me.Height
     ' Deferred worker startup (after UI is visible)
@@ -411,7 +411,7 @@ ErrHandler: eh.Catch
 End Sub
 
 Private Function GetDataWorkbook() As Workbook
-    Dim excelPath As String: excelPath = FolioConfig.GetStr("excel_path")
+    Dim excelPath As String: excelPath = FolioLib.GetStr("excel_path")
     If Len(excelPath) = 0 Then Exit Function
     If Dir$(excelPath) = "" Then Exit Function
 
@@ -444,15 +444,15 @@ Private Sub SwitchSource(sourceName As String)
     Set m_watcher = New SheetWatcher
     m_watcher.Watch m_currentTable.Parent, sourceName, Me
 
-    FolioConfig.EnsureSource sourceName
-    FolioConfig.InitFieldSettingsFromTable sourceName, m_currentTable
+    FolioLib.EnsureSource sourceName
+    FolioLib.InitFieldSettingsFromTable sourceName, m_currentTable
 
     ' Mail / Case config
-    Dim mailFolder As String: mailFolder = FolioConfig.GetStr("mail_folder")
-    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
-    Dim mailMatchField As String: mailMatchField = FolioConfig.GetSourceStr(sourceName, "mail_match_field")
+    Dim mailFolder As String: mailFolder = FolioLib.GetStr("mail_folder")
+    Dim caseRoot As String: caseRoot = FolioLib.GetStr("case_folder_root")
+    Dim mailMatchField As String: mailMatchField = FolioLib.GetSourceStr(sourceName, "mail_match_field")
     If Len(mailMatchField) = 0 Then mailMatchField = "sender_email"
-    Dim mailMatchMode As String: mailMatchMode = FolioConfig.GetSourceStr(sourceName, "mail_match_mode", "exact")
+    Dim mailMatchMode As String: mailMatchMode = FolioLib.GetSourceStr(sourceName, "mail_match_mode", "exact")
 
     ' Worker startup deferred — starts after UI is visible
     m_workerPending = True
@@ -492,10 +492,10 @@ Private Sub BuildFieldEditors()
     m_fieldGroupPageCount = 0
 
     If m_currentTable Is Nothing Then Exit Sub
-    Dim fields As Collection: Set fields = FolioConfig.GetFieldNames(m_currentSource)
+    Dim fields As Collection: Set fields = FolioLib.GetFieldNames(m_currentSource)
     If fields.Count = 0 Then Exit Sub
 
-    Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
+    Dim keyCol As String: keyCol = FolioLib.GetSourceStr(m_currentSource, "key_column")
     Dim hasGroups As Boolean: hasGroups = (CountFieldGroups(fields) >= 2)
 
     If Not hasGroups Then
@@ -565,8 +565,8 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         Dim fn As String: fn = CStr(fields(i))
         ' Skip fields ending with "_非表示"
         If Right$(fn, Len(HIDE_SUFFIX)) = HIDE_SUFFIX Then GoTo NextField
-        Dim isMultiline As Boolean: isMultiline = FolioConfig.GetFieldBool(m_currentSource, fn, "multiline")
-        Dim isEditable As Boolean: isEditable = FolioConfig.GetFieldBool(m_currentSource, fn, "editable", True)
+        Dim isMultiline As Boolean: isMultiline = FolioLib.GetFieldBool(m_currentSource, fn, "multiline")
+        Dim isEditable As Boolean: isEditable = FolioLib.GetFieldBool(m_currentSource, fn, "editable", True)
         If fn = keyCol Then isEditable = False
 
         Dim lbl As MSForms.Label
@@ -577,7 +577,7 @@ Private Sub AddFieldEditorsToPage(pg As MSForms.Page, fields As Collection, keyC
         lbl.Font.Name = "Meiryo UI": lbl.Font.Size = 8
         lbl.ForeColor = RGB(100, 100, 100)
 
-        Dim fType As String: fType = FolioConfig.GetFieldStr(m_currentSource, fn, "type", "text")
+        Dim fType As String: fType = FolioLib.GetFieldStr(m_currentSource, fn, "type", "text")
         Dim isNumber As Boolean: isNumber = (fType = "number")
         Dim txtW As Single: txtW = IIf(isNumber, 120, editorW)
         Dim rowH As Single: rowH = IIf(isMultiline, 54, 22)
@@ -632,7 +632,7 @@ Private Sub BuildJoinedTabs()
     m_mailPageIdx = -1: m_filesPageIdx = -1
 
     ' DEBUG: show conditions in status bar
-    If Len(FolioConfig.GetSourceStr(m_currentSource, "mail_link_column")) > 0 And FolioData.GetMailCount() > 0 Then
+    If Len(FolioLib.GetSourceStr(m_currentSource, "mail_link_column")) > 0 And FolioData.GetMailCount() > 0 Then
         m_mpgTabs.Pages.Add
         m_mailPageIdx = m_mpgTabs.Pages.Count - 1
         Dim pgMail As MSForms.Page: Set pgMail = m_mpgTabs.Pages(m_mailPageIdx)
@@ -640,7 +640,7 @@ Private Sub BuildJoinedTabs()
         BuildMailPage pgMail
     End If
 
-    If Len(FolioConfig.GetSourceStr(m_currentSource, "folder_link_column")) > 0 And FolioData.GetCaseCount() > 0 Then
+    If Len(FolioLib.GetSourceStr(m_currentSource, "folder_link_column")) > 0 And FolioData.GetCaseCount() > 0 Then
         m_mpgTabs.Pages.Add
         m_filesPageIdx = m_mpgTabs.Pages.Count - 1
         Dim pgFiles As MSForms.Page: Set pgFiles = m_mpgTabs.Pages(m_filesPageIdx)
@@ -754,8 +754,8 @@ Private Sub UpdateRecordList()
     If rowCount = 0 Then Exit Sub
 
     Dim dispCols As New Collection
-    Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
-    Dim nameCol As String: nameCol = FolioConfig.GetSourceStr(m_currentSource, "display_name_column")
+    Dim keyCol As String: keyCol = FolioLib.GetSourceStr(m_currentSource, "key_column")
+    Dim nameCol As String: nameCol = FolioLib.GetSourceStr(m_currentSource, "display_name_column")
     If Len(keyCol) > 0 Then dispCols.Add keyCol
     If Len(nameCol) > 0 And nameCol <> keyCol Then dispCols.Add nameCol
 
@@ -778,7 +778,7 @@ Private Sub UpdateRecordList()
         Dim ci As Long
         For ci = 1 To dispCols.Count
             Dim cn As String: cn = CStr(dispCols(ci))
-            Dim fType As String: fType = FolioConfig.GetFieldStr(m_currentSource, cn, "type", "text")
+            Dim fType As String: fType = FolioLib.GetFieldStr(m_currentSource, cn, "type", "text")
             Dim cv As Variant: cv = TableCellValue(r, cn)
             If Len(label) > 0 Then label = label & " | "
             label = label & FormatFieldValue(cv, fType)
@@ -873,7 +873,7 @@ Private Sub UpdateMailTab()
     m_txtMailBody.Text = "": m_lstAttach.Clear
 
     If m_currentRecIdx < 1 Then Exit Sub
-    Dim linkCol As String: linkCol = FolioConfig.GetSourceStr(m_currentSource, "mail_link_column")
+    Dim linkCol As String: linkCol = FolioLib.GetSourceStr(m_currentSource, "mail_link_column")
     If Len(linkCol) = 0 Then Exit Sub
 
     Dim linkVar As Variant: linkVar = TableCellValue(m_currentRecIdx, linkCol)
@@ -881,9 +881,9 @@ Private Sub UpdateMailTab()
     If Not IsNull(linkVar) And Not IsEmpty(linkVar) Then linkVal = CStr(linkVar)
     If Len(linkVal) = 0 Then Exit Sub
 
-    Dim mailMatchField As String: mailMatchField = FolioConfig.GetSourceStr(m_currentSource, "mail_match_field")
+    Dim mailMatchField As String: mailMatchField = FolioLib.GetSourceStr(m_currentSource, "mail_match_field")
     If Len(mailMatchField) = 0 Then mailMatchField = "sender_email"
-    Dim mailMatchMode As String: mailMatchMode = FolioConfig.GetSourceStr(m_currentSource, "mail_match_mode", "exact")
+    Dim mailMatchMode As String: mailMatchMode = FolioLib.GetSourceStr(m_currentSource, "mail_match_mode", "exact")
     Set m_matchedMails = FolioData.FindMailRecords(linkVal, mailMatchField, mailMatchMode)
     If m_matchedMails.Count > 0 Then m_matchedMailArr = m_matchedMails.Items
 
@@ -914,7 +914,7 @@ Private Sub UpdateFilesTab()
     Set m_fileTreeItems = New Collection
 
     If m_currentRecIdx < 1 Then Exit Sub
-    Dim linkCol As String: linkCol = FolioConfig.GetSourceStr(m_currentSource, "folder_link_column")
+    Dim linkCol As String: linkCol = FolioLib.GetSourceStr(m_currentSource, "folder_link_column")
     If Len(linkCol) = 0 Then Exit Sub
 
     Dim linkVar As Variant: linkVar = TableCellValue(m_currentRecIdx, linkCol)
@@ -936,7 +936,7 @@ Private Sub OnCaseFilesResponse()
     m_lstFiles.Clear
     Set m_fileTreeItems = New Collection
 
-    Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
+    Dim caseRoot As String: caseRoot = FolioLib.GetStr("case_folder_root")
     Dim matched As Object
     Set matched = FolioData.ReadCaseFilesFromSheet(ThisWorkbook)
 
@@ -1086,11 +1086,11 @@ End Sub
 Public Sub OnFieldChanged(fieldName As String, oldVal As String, newVal As String, origin As String)
     ' Called once per edit session (on blur for local, on refresh for external)
     If m_loading Then Exit Sub
-    Dim keyCol As String: keyCol = FolioConfig.GetSourceStr(m_currentSource, "key_column")
+    Dim keyCol As String: keyCol = FolioLib.GetSourceStr(m_currentSource, "key_column")
     Dim keyVal As String
     Dim kv As Variant: kv = TableCellValue(m_currentRecIdx, keyCol)
     If Not IsNull(kv) And Not IsEmpty(kv) Then keyVal = CStr(kv)
-    FolioChangeLog.AddLogEntry m_currentSource, keyVal, fieldName, oldVal, newVal, origin
+    FolioLib.AddLogEntry m_currentSource, keyVal, fieldName, oldVal, newVal, origin
     AddLogLine m_currentSource, keyVal, fieldName, oldVal, newVal, origin
     If origin = "local" Then PushUndo m_currentSource, keyVal, fieldName, oldVal, newVal
     m_lblStatus.Caption = "  " & origin & ": " & fieldName & " @ " & Format$(Now, "hh:nn:ss")
@@ -1143,10 +1143,10 @@ Private Sub LoadChangeLog()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "LoadChangeLog"
     On Error GoTo ErrHandler
     m_lstLog.Clear
-    Dim entries As Collection: Set entries = FolioChangeLog.GetRecentEntries(200)
+    Dim entries As Collection: Set entries = FolioLib.GetRecentEntries(200)
     Dim i As Long
     For i = 1 To entries.Count
-        m_lstLog.AddItem FolioChangeLog.FormatLogLine(entries(i))
+        m_lstLog.AddItem FolioLib.FormatLogLine(entries(i))
     Next i
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -1157,7 +1157,7 @@ Private Sub AddLogLine(src As String, key As String, field As String, oldVal As 
     On Error GoTo ErrHandler
     Dim recName As String
     If m_currentRecIdx > 0 Then
-        Dim nameCol As String: nameCol = FolioConfig.GetSourceStr(m_currentSource, "display_name_column")
+        Dim nameCol As String: nameCol = FolioLib.GetSourceStr(m_currentSource, "display_name_column")
         If Len(nameCol) > 0 Then
             Dim nv As Variant: nv = TableCellValue(m_currentRecIdx, nameCol)
             If Not IsNull(nv) And Not IsEmpty(nv) Then recName = CStr(nv)
@@ -1172,7 +1172,7 @@ Private Sub AddLogLine(src As String, key As String, field As String, oldVal As 
     entry.Add "old", oldVal
     entry.Add "new", newVal
     entry.Add "origin", origin
-    Dim line As String: line = FolioChangeLog.FormatLogLine(entry)
+    Dim line As String: line = FolioLib.FormatLogLine(entry)
     If m_lstLog.ListCount > 0 Then
         m_lstLog.AddItem line, 0
     Else
@@ -1256,7 +1256,7 @@ Private Sub LogDiffsFromSheet()
     Dim i As Long
     For i = 1 To UBound(data, 1)
         If Len(CStr(data(i, 1))) = 0 Then GoTo NextDiff
-        Dim d As Object: Set d = FolioHelpers.NewDict()
+        Dim d As Object: Set d = FolioLib.NewDict()
         d.Add "action", CStr(data(i, 1))
         d.Add "type", CStr(data(i, 2))
         d.Add "id", CStr(data(i, 3))
@@ -1266,13 +1266,13 @@ NextDiff:
     Next i
 
     If diffs.Count = 0 Then Exit Sub
-    FolioChangeLog.AddLogEntries diffs
+    FolioLib.AddLogEntries diffs
 
     For i = 1 To diffs.Count
         Dim de As Object: Set de = diffs(i)
-        Dim action As String: action = FolioHelpers.DictStr(de, "action")
-        Dim dtype As String: dtype = FolioHelpers.DictStr(de, "type")
-        Dim desc As String: desc = FolioHelpers.DictStr(de, "description")
+        Dim action As String: action = FolioLib.DictStr(de, "action")
+        Dim dtype As String: dtype = FolioLib.DictStr(de, "type")
+        Dim desc As String: desc = FolioLib.DictStr(de, "description")
         Dim prefix As String
         If action = "added" Then prefix = "+" Else prefix = "-"
         Dim line As String
@@ -1374,7 +1374,7 @@ End Sub
 Private Sub m_cmdLogClear_Click()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdLogClear_Click"
     On Error GoTo ErrHandler
-    FolioChangeLog.ClearLog
+    FolioLib.ClearLog
     m_lstLog.Clear
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -1488,13 +1488,13 @@ Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
         eh.OK: Exit Sub
     End If
 
-    FolioConfig.SetLng "window_width", CLng(Me.Width)
-    FolioConfig.SetLng "window_height", CLng(Me.Height)
-    FolioConfig.SetLng "left_width", CLng(m_leftW)
-    FolioConfig.SetLng "right_width", CLng(m_rightW)
-    FolioConfig.SetLng "font_size", m_fontSize
-    FolioConfig.SetStr "selected_source", m_currentSource
-    FolioConfig.SetStr "search_text", m_txtFilter.Text
+    FolioLib.SetLng "window_width", CLng(Me.Width)
+    FolioLib.SetLng "window_height", CLng(Me.Height)
+    FolioLib.SetLng "left_width", CLng(m_leftW)
+    FolioLib.SetLng "right_width", CLng(m_rightW)
+    FolioLib.SetLng "font_size", m_fontSize
+    FolioLib.SetStr "selected_source", m_currentSource
+    FolioLib.SetStr "search_text", m_txtFilter.Text
     CleanupRefs
     eh.OK: Exit Sub
 ErrHandler: eh.Catch

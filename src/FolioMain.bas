@@ -12,8 +12,8 @@ Private g_requestId As Long
 Public Sub Folio_ShowPanel()
     Dim eh As New ErrorHandler: eh.Enter "FolioMain", "ShowPanel"
     On Error GoTo ErrHandler
-    FolioConfig.EnsureConfigSheets
-    FolioChangeLog.EnsureLogSheet
+    FolioLib.EnsureConfigSheets
+    FolioLib.EnsureLogSheet
     EnsureFolioSheets
     g_forceClose = False
     g_formLoaded = True
@@ -48,7 +48,7 @@ Public Sub BeforeWorkbookClose()
     g_forceClose = True
     g_formLoaded = False
     StopWorker
-    FolioConfig.SaveToSheets
+    FolioLib.SaveToSheets
 End Sub
 
 ' --- FE Data Sheets ---
@@ -165,7 +165,7 @@ Private Sub WriteWorkerPid(beforePids As Object)
         If Not beforePids.Exists(k) Then pid = CLng(k): Exit For
     Next k
     If pid = 0 Then Exit Sub
-    FolioHelpers.EnsureFolder ThisWorkbook.path & "\.folio_cache"
+    FolioLib.EnsureFolder ThisWorkbook.path & "\.folio_cache"
     Dim pidPath As String: pidPath = GetWorkerPidPath()
     Dim f As Long: f = FreeFile
     Open pidPath For Output As #f

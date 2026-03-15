@@ -232,27 +232,27 @@ End Function
 Private Sub LoadConfig()
     m_suppressEvents = True
 
-    m_txtExcelPath.Text = FolioConfig.GetStr("excel_path")
-    m_txtMailFolder.Text = FolioConfig.GetStr("mail_folder")
-    m_txtCaseFolder.Text = FolioConfig.GetStr("case_folder_root")
-    m_txtDraftFrom.Text = FolioConfig.GetStr("draft_from")
-    m_txtDraftSubject.Text = FolioConfig.GetStr("draft_subject")
-    m_txtDraftBody.Text = Replace(FolioConfig.GetStr("draft_body"), "\n", vbCrLf)
+    m_txtExcelPath.Text = FolioLib.GetStr("excel_path")
+    m_txtMailFolder.Text = FolioLib.GetStr("mail_folder")
+    m_txtCaseFolder.Text = FolioLib.GetStr("case_folder_root")
+    m_txtDraftFrom.Text = FolioLib.GetStr("draft_from")
+    m_txtDraftSubject.Text = FolioLib.GetStr("draft_subject")
+    m_txtDraftBody.Text = Replace(FolioLib.GetStr("draft_body"), "\n", vbCrLf)
 
     ' Load tables from Excel path
     If Len(m_txtExcelPath.Text) > 0 Then LoadTables
 
     ' Restore selected source
-    Dim sources As Collection: Set sources = FolioConfig.GetSourceNames()
+    Dim sources As Collection: Set sources = FolioLib.GetSourceNames()
     If sources.Count > 0 Then
         SelectComboItem m_cmbTable, CStr(sources(1))
         LoadColumns
         Dim src As String: src = CStr(sources(1))
-        SelectComboItem m_cmbKeyCol, FolioConfig.GetSourceStr(src, "key_column")
-        SelectComboItem m_cmbNameCol, FolioConfig.GetSourceStr(src, "display_name_column")
-        SelectComboItem m_cmbMailCol, FolioConfig.GetSourceStr(src, "mail_link_column")
-        SelectComboItem m_cmbMailMatchMode, FolioConfig.GetSourceStr(src, "mail_match_mode", "exact")
-        SelectComboItem m_cmbFolderCol, FolioConfig.GetSourceStr(src, "folder_link_column")
+        SelectComboItem m_cmbKeyCol, FolioLib.GetSourceStr(src, "key_column")
+        SelectComboItem m_cmbNameCol, FolioLib.GetSourceStr(src, "display_name_column")
+        SelectComboItem m_cmbMailCol, FolioLib.GetSourceStr(src, "mail_link_column")
+        SelectComboItem m_cmbMailMatchMode, FolioLib.GetSourceStr(src, "mail_match_mode", "exact")
+        SelectComboItem m_cmbFolderCol, FolioLib.GetSourceStr(src, "folder_link_column")
     End If
 
     m_suppressEvents = False
@@ -388,27 +388,27 @@ Private Sub m_cmdSave_Click()
         End If
     End If
 
-    FolioConfig.SetStr "excel_path", m_txtExcelPath.Text
-    FolioConfig.SetStr "mail_folder", m_txtMailFolder.Text
-    FolioConfig.SetStr "case_folder_root", m_txtCaseFolder.Text
-    FolioConfig.SetStr "draft_from", m_txtDraftFrom.Text
-    FolioConfig.SetStr "draft_subject", m_txtDraftSubject.Text
-    FolioConfig.SetStr "draft_body", Replace(m_txtDraftBody.Text, vbCrLf, "\n")
+    FolioLib.SetStr "excel_path", m_txtExcelPath.Text
+    FolioLib.SetStr "mail_folder", m_txtMailFolder.Text
+    FolioLib.SetStr "case_folder_root", m_txtCaseFolder.Text
+    FolioLib.SetStr "draft_from", m_txtDraftFrom.Text
+    FolioLib.SetStr "draft_subject", m_txtDraftSubject.Text
+    FolioLib.SetStr "draft_body", Replace(m_txtDraftBody.Text, vbCrLf, "\n")
 
     If m_cmbTable.ListIndex >= 0 Then
         Dim src As String: src = m_cmbTable.Text
-        FolioConfig.EnsureSource src
-        FolioConfig.SetSourceStr src, "key_column", m_cmbKeyCol.Text
-        FolioConfig.SetSourceStr src, "display_name_column", m_cmbNameCol.Text
-        If m_cmbMailCol.ListIndex > 0 Then FolioConfig.SetSourceStr src, "mail_link_column", m_cmbMailCol.Text
-        FolioConfig.SetSourceStr src, "mail_match_mode", m_cmbMailMatchMode.Text
-        If m_cmbFolderCol.ListIndex > 0 Then FolioConfig.SetSourceStr src, "folder_link_column", m_cmbFolderCol.Text
+        FolioLib.EnsureSource src
+        FolioLib.SetSourceStr src, "key_column", m_cmbKeyCol.Text
+        FolioLib.SetSourceStr src, "display_name_column", m_cmbNameCol.Text
+        If m_cmbMailCol.ListIndex > 0 Then FolioLib.SetSourceStr src, "mail_link_column", m_cmbMailCol.Text
+        FolioLib.SetSourceStr src, "mail_match_mode", m_cmbMailMatchMode.Text
+        If m_cmbFolderCol.ListIndex > 0 Then FolioLib.SetSourceStr src, "folder_link_column", m_cmbFolderCol.Text
 
         ' Auto-detect field settings from table format
         Dim wb As Workbook: Set wb = FindOrOpenWorkbook(m_txtExcelPath.Text)
         If Not wb Is Nothing Then
             Dim tbl As ListObject: Set tbl = FolioData.FindTable(wb, src)
-            If Not tbl Is Nothing Then FolioConfig.InitFieldSettingsFromTable src, tbl
+            If Not tbl Is Nothing Then FolioLib.InitFieldSettingsFromTable src, tbl
         End If
     End If
 

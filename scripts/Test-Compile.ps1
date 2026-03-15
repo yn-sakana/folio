@@ -48,22 +48,14 @@ Public Sub RunAllTests()
     fnum = FreeFile
     Open "$($tempFile -replace '\\','\\')" For Output As #fnum
 
-    ' --- FolioHelpers ---
-    TestCall fnum, "FolioHelpers.NewDict", ""
-    TestCall fnum, "FolioHelpers.ParseJson", ""
-    TestCall fnum, "FolioHelpers.SafeName", ""
-    TestCall fnum, "FolioHelpers.FileExists", ""
-    TestCall fnum, "FolioHelpers.FolderExists", ""
-
-    ' --- FolioConfig ---
-    TestCall fnum, "FolioConfig.EnsureConfigSheet", ""
-    TestCall fnum, "FolioConfig.GetProfileNames", ""
-    TestCall fnum, "FolioConfig.GetActiveProfileName", ""
-    TestCall fnum, "FolioConfig.GetActiveConfig", ""
-    TestCall fnum, "FolioConfig.NewDefaultConfig", ""
-
-    ' --- FolioChangeLog ---
-    TestCall fnum, "FolioChangeLog.EnsureLogSheet", ""
+    ' --- FolioLib (merged from FolioHelpers + FolioConfig + FolioChangeLog) ---
+    TestCall fnum, "FolioLib.NewDict", ""
+    TestCall fnum, "FolioLib.ParseJson", ""
+    TestCall fnum, "FolioLib.SafeName", ""
+    TestCall fnum, "FolioLib.FileExists", ""
+    TestCall fnum, "FolioLib.FolderExists", ""
+    TestCall fnum, "FolioLib.EnsureConfigSheets", ""
+    TestCall fnum, "FolioLib.EnsureLogSheet", ""
 
     ' --- FolioData ---
     TestCall fnum, "FolioData.GetWorkbookTableNames", ""
@@ -82,38 +74,26 @@ Private Sub TestCall(fnum As Integer, procName As String, note As String)
     On Error GoTo ErrHandler
     Dim result As String
     Select Case procName
-        Case "FolioHelpers.NewDict"
-            Dim d As Object: Set d = FolioHelpers.NewDict()
+        Case "FolioLib.NewDict"
+            Dim d As Object: Set d = FolioLib.NewDict()
             result = "OK (Dict created)"
-        Case "FolioHelpers.ParseJson"
-            Dim j As Object: Set j = FolioHelpers.ParseJson("{""a"":1}")
+        Case "FolioLib.ParseJson"
+            Dim j As Object: Set j = FolioLib.ParseJson("{""a"":1}")
             result = "OK (parsed)"
-        Case "FolioHelpers.SafeName"
-            Dim sn As String: sn = FolioHelpers.SafeName("test/file:name")
+        Case "FolioLib.SafeName"
+            Dim sn As String: sn = FolioLib.SafeName("test/file:name")
             result = "OK (" & sn & ")"
-        Case "FolioHelpers.FileExists"
-            Dim fe As Boolean: fe = FolioHelpers.FileExists("C:\nonexist.txt")
+        Case "FolioLib.FileExists"
+            Dim fe As Boolean: fe = FolioLib.FileExists("C:\nonexist.txt")
             result = "OK (" & fe & ")"
-        Case "FolioHelpers.FolderExists"
-            Dim fde As Boolean: fde = FolioHelpers.FolderExists("C:\")
+        Case "FolioLib.FolderExists"
+            Dim fde As Boolean: fde = FolioLib.FolderExists("C:\")
             result = "OK (" & fde & ")"
-        Case "FolioConfig.EnsureConfigSheet"
-            FolioConfig.EnsureConfigSheet
+        Case "FolioLib.EnsureConfigSheets"
+            FolioLib.EnsureConfigSheets
             result = "OK"
-        Case "FolioConfig.GetProfileNames"
-            Dim pn As Collection: Set pn = FolioConfig.GetProfileNames()
-            result = "OK (count=" & pn.Count & ")"
-        Case "FolioConfig.GetActiveProfileName"
-            Dim apn As String: apn = FolioConfig.GetActiveProfileName()
-            result = "OK (" & apn & ")"
-        Case "FolioConfig.GetActiveConfig"
-            Dim ac As Object: Set ac = FolioConfig.GetActiveConfig()
-            result = "OK (keys=" & ac.Count & ")"
-        Case "FolioConfig.NewDefaultConfig"
-            Dim dc As Object: Set dc = FolioConfig.NewDefaultConfig()
-            result = "OK (keys=" & dc.Count & ")"
-        Case "FolioChangeLog.EnsureLogSheet"
-            FolioChangeLog.EnsureLogSheet
+        Case "FolioLib.EnsureLogSheet"
+            FolioLib.EnsureLogSheet
             result = "OK"
         Case "FolioData.GetWorkbookTableNames"
             Dim tn As Collection: Set tn = FolioData.GetWorkbookTableNames(ActiveWorkbook)

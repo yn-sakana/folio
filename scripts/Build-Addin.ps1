@@ -22,11 +22,8 @@ $projectDir = Split-Path -Parent $scriptDir
 $srcDir = Join-Path $projectDir 'src'
 
 $basModules = @(
-    'FolioHelpers.bas',
-    'FolioConfig.bas',
+    'FolioLib.bas',
     'FolioData.bas',
-    'FolioScanner.bas',
-    'FolioChangeLog.bas',
     'FolioMain.bas',
     'FolioWorker.bas'
 )

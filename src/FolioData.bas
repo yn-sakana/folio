@@ -50,7 +50,7 @@ End Function
 Public Function ReadTableRecords(tbl As ListObject) As Object
     Dim eh As New ErrorHandler: eh.Enter "FolioData", "ReadTableRecords"
     On Error GoTo ErrHandler
-    Set ReadTableRecords = FolioHelpers.NewDict()
+    Set ReadTableRecords = FolioLib.NewDict()
     If tbl.DataBodyRange Is Nothing Then eh.OK: Exit Function
     Dim data As Variant: data = tbl.DataBodyRange.Value
     Dim nCols As Long: nCols = tbl.ListColumns.Count
@@ -61,7 +61,7 @@ Public Function ReadTableRecords(tbl As ListObject) As Object
     Next c
     Dim r As Long
     For r = 1 To UBound(data, 1)
-        Dim rec As Object: Set rec = FolioHelpers.NewDict()
+        Dim rec As Object: Set rec = FolioLib.NewDict()
         rec.Add "_row_index", r
         For c = 1 To nCols
             rec.Add colNames(c), data(r, c)
@@ -104,7 +104,7 @@ End Function
 
 ' FE: Find mail records matching keyValue via FE-side Dictionary cache
 Public Function FindMailRecords(keyValue As String, matchField As String, matchMode As String) As Object
-    Dim result As Object: Set result = FolioHelpers.NewDict()
+    Dim result As Object: Set result = FolioLib.NewDict()
     Set FindMailRecords = result
     If Len(keyValue) = 0 Then Exit Function
     If m_feMailIndex Is Nothing Then Exit Function
@@ -143,7 +143,7 @@ End Function
 
 ' FE: Read case files directly from _folio_files sheet (on-demand response from BE)
 Public Function ReadCaseFilesFromSheet(wb As Workbook) As Object
-    Dim result As Object: Set result = FolioHelpers.NewDict()
+    Dim result As Object: Set result = FolioLib.NewDict()
     Set ReadCaseFilesFromSheet = result
     On Error GoTo ErrOut
     Dim ws As Worksheet: Set ws = wb.Worksheets("_folio_files")
@@ -153,7 +153,7 @@ Public Function ReadCaseFilesFromSheet(wb As Workbook) As Object
     If UBound(data, 2) < 7 Then Exit Function
     Dim i As Long
     For i = 1 To UBound(data, 1)
-        Dim rec As Object: Set rec = FolioHelpers.NewDict()
+        Dim rec As Object: Set rec = FolioLib.NewDict()
         rec.Add "case_id", CStr(data(i, 1))
         rec.Add "file_name", CStr(data(i, 2))
         rec.Add "file_path", CStr(data(i, 3))
@@ -173,9 +173,9 @@ Public Sub CreateCaseFolder(rootPath As String, caseId As String, displayName As
     On Error GoTo ErrHandler
     If Len(rootPath) = 0 Or Len(caseId) = 0 Then eh.OK: Exit Sub
     Dim folderName As String
-    folderName = FolioHelpers.SafeName(caseId)
-    If Len(displayName) > 0 Then folderName = folderName & "_" & FolioHelpers.SafeName(displayName)
-    FolioHelpers.EnsureFolder rootPath & "\" & folderName
+    folderName = FolioLib.SafeName(caseId)
+    If Len(displayName) > 0 Then folderName = folderName & "_" & FolioLib.SafeName(displayName)
+    FolioLib.EnsureFolder rootPath & "\" & folderName
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -208,12 +208,12 @@ Private Sub LoadMailFromLocalSheet(wb As Workbook)
     If ws.Range("A1").Value = "" Then Exit Sub
     Dim data As Variant: data = ws.UsedRange.Value
     If IsEmpty(data) Then Exit Sub
-    Dim newRecs As Object: Set newRecs = FolioHelpers.NewDict()
+    Dim newRecs As Object: Set newRecs = FolioLib.NewDict()
     Dim i As Long
     For i = 1 To UBound(data, 1)
         Dim eid As String: eid = CStr(data(i, 1))
         If Len(eid) = 0 Then GoTo NextLMail
-        Dim rec As Object: Set rec = FolioHelpers.NewDict()
+        Dim rec As Object: Set rec = FolioLib.NewDict()
         rec.Add "entry_id", eid
         rec.Add "sender_email", CStr(data(i, 2))
         rec.Add "sender_name", CStr(data(i, 3))
@@ -222,7 +222,7 @@ Private Sub LoadMailFromLocalSheet(wb As Workbook)
         rec.Add "folder_path", CStr(data(i, 6))
         rec.Add "body_path", CStr(data(i, 7))
         rec.Add "msg_path", CStr(data(i, 8))
-        Dim attDict As Object: Set attDict = FolioHelpers.NewDict()
+        Dim attDict As Object: Set attDict = FolioLib.NewDict()
         Dim attStr As String: attStr = CStr(data(i, 9))
         If Len(attStr) > 0 Then
             Dim attParts() As String: attParts = Split(attStr, "|")
@@ -250,12 +250,12 @@ Private Sub LoadMailIndexFromLocalSheet(wb As Workbook)
     If ws.Range("A1").Value = "" Then Exit Sub
     Dim data As Variant: data = ws.UsedRange.Value
     If IsEmpty(data) Then Exit Sub
-    Dim newIdx As Object: Set newIdx = FolioHelpers.NewDict()
+    Dim newIdx As Object: Set newIdx = FolioLib.NewDict()
     Dim i As Long
     For i = 1 To UBound(data, 1)
         Dim key As String: key = CStr(data(i, 1))
         If Len(key) = 0 Then GoTo NextLIdx
-        If Not newIdx.Exists(key) Then newIdx.Add key, FolioHelpers.NewDict()
+        If Not newIdx.Exists(key) Then newIdx.Add key, FolioLib.NewDict()
         Dim inner As Object: Set inner = newIdx(key)
         inner(CStr(data(i, 2))) = True
 NextLIdx:
@@ -271,7 +271,7 @@ Private Sub LoadCasesFromLocalSheet(wb As Workbook)
     If ws.Range("A1").Value = "" Then Exit Sub
     Dim data As Variant: data = ws.UsedRange.Value
     If IsEmpty(data) Then Exit Sub
-    Dim newNames As Object: Set newNames = FolioHelpers.NewDict()
+    Dim newNames As Object: Set newNames = FolioLib.NewDict()
     Dim i As Long
     For i = 1 To UBound(data, 1)
         Dim nm As String: nm = CStr(data(i, 1))
