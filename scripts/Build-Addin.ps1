@@ -34,8 +34,7 @@ $clsModules = @(
 )
 $frmModules = @(
     @{ Name = 'frmFolio';       File = 'frmFolio.frm' },
-    @{ Name = 'frmSettings';    File = 'frmSettings.frm' },
-    @{ Name = 'frmResize';      File = 'frmResize.frm' }
+    @{ Name = 'frmSettings';    File = 'frmSettings.frm' }
 )
 
 # --- Helper: extract code from .cls/.frm (skip VERSION/BEGIN/END/Attribute header) ---
@@ -126,8 +125,6 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
     If Left$(sn, 6) <> "_folio" Then Exit Sub
     ' FE side: forward to UI
     If FolioMain.g_formLoaded Then frmFolio.OnFolioSheetChange sn
-    ' BE side: handle FE requests (async via OnTime)
-    If sn = "_folio_request" Then Application.OnTime Now, "FolioWorker.ProcessRequest"
     On Error GoTo 0
 End Sub
 '@

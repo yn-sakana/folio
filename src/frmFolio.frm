@@ -22,8 +22,12 @@ Private WithEvents m_txtFilter As MSForms.TextBox
 Private WithEvents m_lstRecords As MSForms.ListBox
 Private WithEvents m_mpgTabs As MSForms.MultiPage
 Private WithEvents m_cmdSettings As MSForms.CommandButton
-Private WithEvents m_cmdResize As MSForms.CommandButton
 Private WithEvents m_cmdLogClear As MSForms.CommandButton
+Private WithEvents m_cmdToggleLeft As MSForms.CommandButton
+Private WithEvents m_cmdToggleRight As MSForms.CommandButton
+Private WithEvents m_resizeHandle As MSForms.Label
+Private WithEvents m_splitterLeft As MSForms.Label
+Private WithEvents m_splitterRight As MSForms.Label
 Private WithEvents m_lstMail As MSForms.ListBox
 Private WithEvents m_lstAttach As MSForms.ListBox
 Private WithEvents m_lstFiles As MSForms.ListBox
@@ -69,6 +73,15 @@ Private Const M As Long = 6
 Private Const UNDO_MAX As Long = 50
 Private m_leftW As Single
 Private m_rightW As Single
+Private m_leftVisible As Boolean
+Private m_rightVisible As Boolean
+Private m_splitterDragging As Boolean
+Private m_splitterDragStartX As Single
+Private m_splitterDragStartY As Single
+Private m_splitterDragTarget As String  ' "left" or "right" or "resize"
+Private m_splitterGuide As MSForms.Label
+Private m_origWidth As Single
+Private m_origHeight As Single
 Private m_fontSize As Long
 
 ' Window size range
@@ -93,6 +106,8 @@ Private Sub UserForm_Initialize()
 
     m_leftW = FolioLib.GetLng("left_width", 250)
     m_rightW = FolioLib.GetLng("right_width", 250)
+    m_leftVisible = True
+    m_rightVisible = True
     m_fontSize = FolioLib.GetLng("font_size", 10)
     Me.Width = FolioLib.GetLng("window_width", 870)
     Me.Height = FolioLib.GetLng("window_height", 540)
@@ -143,8 +158,30 @@ Private Sub BuildLayout()
 
     Dim cx As Single: cx = m_leftW + M * 2
     Set m_cmdSettings = AddButton(Me, "cmdSettings", cx, M, 60, 22, "Settings")
-    Set m_cmdResize = AddButton(Me, "cmdResize", cx + 64, M, 50, 22, "Resize")
-    m_cmdResize.Font.Size = 8
+    Set m_cmdToggleLeft = AddButton(Me, "cmdToggleLeft", cx + 64, M, 22, 22, ChrW$(&H25C0))
+    m_cmdToggleLeft.Font.Size = 7
+    Set m_cmdToggleRight = AddButton(Me, "cmdToggleRight", cx + 88, M, 22, 22, ChrW$(&H25B6))
+    m_cmdToggleRight.Font.Size = 7
+
+    ' Left splitter
+    Set m_splitterLeft = Me.Controls.Add("Forms.Label.1", "splitterLeft")
+    m_splitterLeft.BackColor = &HC0C0C0: m_splitterLeft.Caption = ""
+    m_splitterLeft.MousePointer = 9
+
+    ' Right splitter
+    Set m_splitterRight = Me.Controls.Add("Forms.Label.1", "splitterRight")
+    m_splitterRight.BackColor = &HC0C0C0: m_splitterRight.Caption = ""
+    m_splitterRight.MousePointer = 9
+
+    ' Splitter guide (shared, shown during drag)
+    Set m_splitterGuide = Me.Controls.Add("Forms.Label.1", "splitterGuide")
+    m_splitterGuide.BackColor = &H808080: m_splitterGuide.Caption = ""
+    m_splitterGuide.Visible = False: m_splitterGuide.Enabled = False
+
+    ' Resize handle (bottom-right corner)
+    Set m_resizeHandle = Me.Controls.Add("Forms.Label.1", "resizeHandle")
+    m_resizeHandle.BackColor = &HC0C0C0: m_resizeHandle.Caption = ""
+    m_resizeHandle.MousePointer = 8
 
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
     With m_mpgTabs
@@ -180,73 +217,189 @@ Private Sub BuildLayout()
 ErrHandler: eh.Catch
 End Sub
 
-Private Sub m_cmdResize_Click()
-    frmResize.ShowFor Me
-End Sub
+' === Toggle left/right columns ===
 
-
-' Called from frmResize
-Public Sub ApplyResize(newLeftW As Single, newRightW As Single, newWidth As Single, newHeight As Single, newFontSize As Long)
-    m_leftW = newLeftW
-    m_rightW = newRightW
-    m_fontSize = newFontSize
-    Me.Width = newWidth
-    Me.Height = newHeight
-    m_lastWidth = Me.Width: m_lastHeight = Me.Height
-    ' Apply font
-    On Error Resume Next
-    m_lstRecords.Font.Size = m_fontSize
-    m_lstLog.Font.Size = m_fontSize
-    If Not m_lstMail Is Nothing Then m_lstMail.Font.Size = m_fontSize
-    If Not m_lstAttach Is Nothing Then m_lstAttach.Font.Size = m_fontSize
-    If Not m_lstFiles Is Nothing Then m_lstFiles.Font.Size = m_fontSize
-    If Not m_txtMailBody Is Nothing Then m_txtMailBody.Font.Size = m_fontSize
-    ' Field editors
-    Dim ei As Long
-    For ei = 1 To m_fieldEditors.Count
-        m_fieldEditors(ei).TextBox.Font.Size = m_fontSize
-    Next ei
-    On Error GoTo 0
+Private Sub m_cmdToggleLeft_Click()
+    m_leftVisible = Not m_leftVisible
+    m_cmdToggleLeft.Caption = IIf(m_leftVisible, ChrW$(&H25C0), ChrW$(&H25B6))
     RepositionControls
 End Sub
 
-Public Property Get LeftW() As Single: LeftW = m_leftW: End Property
-Public Property Get RightW() As Single: RightW = m_rightW: End Property
-Public Property Get FontSize() As Long: FontSize = m_fontSize: End Property
+Private Sub m_cmdToggleRight_Click()
+    m_rightVisible = Not m_rightVisible
+    m_cmdToggleRight.Caption = IIf(m_rightVisible, ChrW$(&H25B6), ChrW$(&H25C0))
+    RepositionControls
+End Sub
+
+' === Splitter drag (guide line follows mouse, apply on MouseUp) ===
+
+Private Sub m_splitterLeft_MouseDown(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    If Button = 1 Then StartSplitterDrag "left", X
+End Sub
+Private Sub m_splitterLeft_MouseMove(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    MoveSplitterGuide "left", X
+End Sub
+Private Sub m_splitterLeft_MouseUp(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    EndSplitterDrag "left", X
+End Sub
+
+Private Sub m_splitterRight_MouseDown(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    If Button = 1 Then StartSplitterDrag "right", X
+End Sub
+Private Sub m_splitterRight_MouseMove(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    MoveSplitterGuide "right", X
+End Sub
+Private Sub m_splitterRight_MouseUp(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    EndSplitterDrag "right", X
+End Sub
+
+Private Sub StartSplitterDrag(target As String, X As Single)
+    m_splitterDragging = True
+    m_splitterDragStartX = X
+    m_splitterDragTarget = target
+    Dim src As MSForms.Label
+    If target = "left" Then Set src = m_splitterLeft Else Set src = m_splitterRight
+    m_splitterGuide.Left = src.Left
+    m_splitterGuide.Top = 0
+    m_splitterGuide.Width = 2
+    m_splitterGuide.Height = Me.InsideHeight
+    m_splitterGuide.Visible = True
+End Sub
+
+Private Sub MoveSplitterGuide(target As String, X As Single)
+    If Not m_splitterDragging Then Exit Sub
+    If m_splitterDragTarget <> target Then Exit Sub
+    Dim src As MSForms.Label
+    If target = "left" Then Set src = m_splitterLeft Else Set src = m_splitterRight
+    Dim newLeft As Single: newLeft = src.Left + (X - m_splitterDragStartX)
+    If newLeft < 80 Then newLeft = 80
+    If newLeft > Me.InsideWidth - 80 Then newLeft = Me.InsideWidth - 80
+    m_splitterGuide.Left = newLeft
+End Sub
+
+Private Sub EndSplitterDrag(target As String, X As Single)
+    If Not m_splitterDragging Then Exit Sub
+    If m_splitterDragTarget <> target Then Exit Sub
+    m_splitterDragging = False
+    m_splitterGuide.Visible = False
+    Dim src As MSForms.Label
+    If target = "left" Then Set src = m_splitterLeft Else Set src = m_splitterRight
+    Dim delta As Single: delta = X - m_splitterDragStartX
+    If Abs(delta) < 2 Then Exit Sub
+    If target = "left" Then
+        m_leftW = m_leftW + delta
+        If m_leftW < 80 Then m_leftW = 80
+        If m_leftW > Me.InsideWidth - m_rightW - 100 Then m_leftW = Me.InsideWidth - m_rightW - 100
+    Else
+        m_rightW = m_rightW - delta
+        If m_rightW < 80 Then m_rightW = 80
+        If m_rightW > Me.InsideWidth - m_leftW - 100 Then m_rightW = Me.InsideWidth - m_leftW - 100
+    End If
+    RepositionControls
+End Sub
+
+' === Resize handle drag ===
+
+Private Sub m_resizeHandle_MouseDown(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    If Button = 1 Then
+        m_splitterDragging = True
+        m_splitterDragTarget = "resize"
+        m_splitterDragStartX = X
+        m_splitterDragStartY = Y
+        m_origWidth = Me.Width
+        m_origHeight = Me.Height
+    End If
+End Sub
+
+Private Sub m_resizeHandle_MouseMove(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    If Not m_splitterDragging Then Exit Sub
+    If m_splitterDragTarget <> "resize" Then Exit Sub
+    Dim newW As Single: newW = m_origWidth + (X - m_splitterDragStartX)
+    Dim newH As Single: newH = m_origHeight + (Y - m_splitterDragStartY)
+    If newW < 500 Then newW = 500
+    If newH < 300 Then newH = 300
+    Me.Width = newW
+    Me.Height = newH
+End Sub
+
+Private Sub m_resizeHandle_MouseUp(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    If Not m_splitterDragging Then Exit Sub
+    If m_splitterDragTarget <> "resize" Then Exit Sub
+    m_splitterDragging = False
+    m_lastWidth = Me.Width: m_lastHeight = Me.Height
+    RepositionControls
+End Sub
 
 Private Sub RepositionControls()
     Dim eh As New ErrorHandler: eh.Enter "frmFolio", "RepositionControls"
     On Error GoTo ErrHandler
     Dim cw As Single: cw = Me.InsideWidth
     Dim ch As Single: ch = Me.InsideHeight
-    If cw < m_leftW + m_rightW + M * 4 + 20 Or ch < 300 Then Exit Sub
-    Dim centerW As Single: centerW = cw - m_leftW - m_rightW - M * 4
+    Dim effLeftW As Single: effLeftW = IIf(m_leftVisible, m_leftW, 0)
+    Dim effRightW As Single: effRightW = IIf(m_rightVisible, m_rightW, 0)
+    Dim splitterW As Single: splitterW = 4
+    Dim handleSize As Single: handleSize = 14
+    Dim centerW As Single: centerW = cw - effLeftW - effRightW - M * 2
+    If m_leftVisible Then centerW = centerW - splitterW
+    If m_rightVisible Then centerW = centerW - splitterW
     If centerW < 60 Then Exit Sub
-    Dim cx As Single: cx = m_leftW + M * 2
-    Dim rx As Single: rx = m_leftW + centerW + M * 3
+    Dim cx As Single: cx = effLeftW + IIf(m_leftVisible, splitterW, 0) + M
+    Dim rx As Single: rx = cx + centerW + M + IIf(m_rightVisible, splitterW, 0)
 
     ' Left column
-    m_cmbSource.Width = m_leftW
-    m_txtFilter.Width = m_leftW
-    m_lstRecords.Width = m_leftW: m_lstRecords.Height = ch - 74
+    m_cmbSource.Visible = m_leftVisible
+    m_txtFilter.Visible = m_leftVisible
+    m_lstRecords.Visible = m_leftVisible
+    If m_leftVisible Then
+        m_cmbSource.Left = M: m_cmbSource.Width = m_leftW
+        m_txtFilter.Left = M: m_txtFilter.Width = m_leftW
+        m_lstRecords.Left = M: m_lstRecords.Width = m_leftW: m_lstRecords.Height = ch - 74
+    End If
+
+    ' Left splitter
+    m_splitterLeft.Visible = m_leftVisible
+    If m_leftVisible Then
+        m_splitterLeft.Left = effLeftW: m_splitterLeft.Top = 0
+        m_splitterLeft.Width = splitterW: m_splitterLeft.Height = ch
+    End If
 
     ' Toolbar buttons
     m_cmdSettings.Left = cx
-    m_cmdResize.Left = cx + 64
+    m_cmdToggleLeft.Left = cx + 64
+    m_cmdToggleRight.Left = cx + 88
 
     ' Center (tabs)
     m_mpgTabs.Left = cx: m_mpgTabs.Top = M + 26
     m_mpgTabs.Width = centerW: m_mpgTabs.Height = ch - 56
 
+    ' Right splitter
+    m_splitterRight.Visible = m_rightVisible
+    If m_rightVisible Then
+        m_splitterRight.Left = rx - splitterW: m_splitterRight.Top = 0
+        m_splitterRight.Width = splitterW: m_splitterRight.Height = ch
+    End If
+
     ' Right column (log)
-    m_lstLog.Left = rx: m_lstLog.Width = m_rightW: m_lstLog.Height = ch - 52
-    m_cmdLogClear.Left = rx
+    m_lstLog.Visible = m_rightVisible
+    m_cmdLogClear.Visible = m_rightVisible
+    If m_rightVisible Then
+        m_lstLog.Left = rx: m_lstLog.Width = m_rightW: m_lstLog.Height = ch - 52
+        m_cmdLogClear.Left = rx
+    End If
 
     ' Status bar
     Dim sbTop As Single: sbTop = ch - 20
-    m_lblCount.Left = M: m_lblCount.Top = sbTop: m_lblCount.Width = m_leftW
-    m_lblStatus.Left = m_leftW + M * 2: m_lblStatus.Top = sbTop
-    m_lblStatus.Width = cw - m_leftW - M * 2
+    m_lblCount.Visible = m_leftVisible
+    If m_leftVisible Then
+        m_lblCount.Left = M: m_lblCount.Top = sbTop: m_lblCount.Width = effLeftW
+    End If
+    m_lblStatus.Left = cx: m_lblStatus.Top = sbTop
+    m_lblStatus.Width = centerW
+
+    ' Resize handle
+    m_resizeHandle.Left = cw - handleSize: m_resizeHandle.Top = ch - handleSize
+    m_resizeHandle.Width = handleSize: m_resizeHandle.Height = handleSize
+
     ResizeTabContents
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -903,7 +1056,7 @@ Private Sub UpdateFilesTab()
     m_lstFiles.Clear
     Set m_fileTreeItems = New Collection
 
-    If m_currentRecIdx < 1 Then Exit Sub
+    If m_currentRecIdx < 1 Then m_mpgTabs.Pages(m_filesPageIdx).Caption = "Files (0)": Exit Sub
     Dim linkCol As String: linkCol = FolioLib.GetSourceStr(m_currentSource, "folder_link_column")
     If Len(linkCol) = 0 Then Exit Sub
 
@@ -912,23 +1065,9 @@ Private Sub UpdateFilesTab()
     If Not IsNull(linkVar) And Not IsEmpty(linkVar) Then linkVal = CStr(linkVar)
     If Len(linkVal) = 0 Then Exit Sub
 
-    ' Send request to BE; response arrives via _folio_files SheetChange
-    FolioMain.SendWorkerRequest "case_files", linkVal
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-' Called when BE writes case files response to _folio_files
-Private Sub OnCaseFilesResponse()
-    On Error Resume Next
-    If m_filesPageIdx < 0 Then Exit Sub
-    If m_lstFiles Is Nothing Then Exit Sub
-    m_lstFiles.Clear
-    Set m_fileTreeItems = New Collection
-
+    ' Read from FE-side cache (populated by BE's background scan loop)
     Dim caseRoot As String: caseRoot = FolioLib.GetStr("case_folder_root")
-    Dim matched As Object
-    Set matched = FolioData.ReadCaseFilesFromSheet(ThisWorkbook)
+    Dim matched As Object: Set matched = FolioData.FindCaseFiles(linkVal)
 
     ' Build tree: group by folder_path, show folder nodes then files
     Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
@@ -953,8 +1092,8 @@ Private Sub OnCaseFilesResponse()
     Dim rootPath As String
     If matched.Count > 0 Then
         Dim firstItem As Object: Set firstItem = mItems(0)
-        Dim caseId As String: caseId = DictStr(firstItem, "case_id")
-        rootPath = caseRoot & "\" & caseId
+        Dim cid As String: cid = DictStr(firstItem, "case_id")
+        rootPath = caseRoot & "\" & cid
     End If
 
     ' Collect all tree nodes (folder + files) in order
@@ -1207,8 +1346,7 @@ Public Sub OnFolioSheetChange(sheetName As String)
             LogDiffsFromSheet
 
         Case "_folio_files"
-            ' Case files response from BE
-            OnCaseFilesResponse
+            ' Now handled synchronously in UpdateFilesTab; ignore async SheetChange
     End Select
     On Error GoTo 0
 End Sub
@@ -1229,6 +1367,7 @@ Private Sub LoadDataFromLocalSheets()
 
     If m_currentRecIdx > 0 Then
         UpdateMailTab
+        UpdateFilesTab
     End If
     On Error GoTo 0
 End Sub
@@ -1494,7 +1633,6 @@ End Sub
 Private Sub CleanupRefs()
     On Error Resume Next
     CommitPendingEdits
-    Unload frmResize
     If Not m_watcher Is Nothing Then m_watcher.StopWatching
     Set m_watcher = Nothing
     FolioMain.StopWorker
