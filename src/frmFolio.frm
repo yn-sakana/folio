@@ -1283,11 +1283,14 @@ Public Sub DoPollCycle()
     If Not m_workerPending Then Exit Sub
     m_workerPending = False
     On Error Resume Next
-    If Not m_lblStatus Is Nothing Then m_lblStatus.Caption = "  Starting..."
-    DoEvents
     If FolioMain.g_workerApp Is Nothing Then
+        If Not m_lblStatus Is Nothing Then m_lblStatus.Caption = "  Starting worker..."
+        DoEvents
         FolioMain.StartWorker m_pendingMailFolder, m_pendingCaseRoot, m_pendingMatchField, m_pendingMatchMode
+        If Not m_lblStatus Is Nothing Then m_lblStatus.Caption = "  Scanning..."
     Else
+        If Not m_lblStatus Is Nothing Then m_lblStatus.Caption = "  Updating config..."
+        DoEvents
         FolioMain.g_workerApp.Run "FolioWorker.UpdateConfig", _
             m_pendingMailFolder, m_pendingCaseRoot, m_pendingMatchField, m_pendingMatchMode
     End If
