@@ -27,10 +27,6 @@ $basModules = @(
     'FolioData.bas',
     'FolioChangeLog.bas',
     'FolioMain.bas',
-    'FolioBundler.bas',
-    'FolioMailExport.bas',
-    'FolioDraft.bas',
-    'FolioPrint.bas',
     'FolioWorker.bas'
 )
 $clsModules = @(
@@ -41,11 +37,7 @@ $clsModules = @(
 $frmModules = @(
     @{ Name = 'frmFolio';       File = 'frmFolio.frm' },
     @{ Name = 'frmSettings';    File = 'frmSettings.frm' },
-    @{ Name = 'frmResize';      File = 'frmResize.frm' },
-    @{ Name = 'frmMailExport';  File = 'frmMailExport.frm' },
-    @{ Name = 'frmFilter';      File = 'frmFilter.frm' },
-    @{ Name = 'frmDraft';       File = 'frmDraft.frm' },
-    @{ Name = 'frmBulkDraft';   File = 'frmBulkDraft.frm' }
+    @{ Name = 'frmResize';      File = 'frmResize.frm' }
 )
 
 # --- Helper: extract code from .cls/.frm (skip VERSION/BEGIN/END/Attribute header) ---
@@ -132,9 +124,12 @@ End Sub
 
 Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
     On Error Resume Next
-    If Not FolioMain.g_formLoaded Then Exit Sub
     Dim sn As String: sn = Sh.Name
-    If Left$(sn, 6) = "_folio" Then frmFolio.OnFolioSheetChange sn
+    If Left$(sn, 6) <> "_folio" Then Exit Sub
+    ' FE side: forward to UI
+    If FolioMain.g_formLoaded Then frmFolio.OnFolioSheetChange sn
+    ' BE side: handle FE requests (async via OnTime)
+    If sn = "_folio_request" Then Application.OnTime Now, "FolioWorker.ProcessRequest"
     On Error GoTo 0
 End Sub
 '@

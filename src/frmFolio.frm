@@ -23,9 +23,6 @@ Private WithEvents m_lstRecords As MSForms.ListBox
 Private WithEvents m_mpgTabs As MSForms.MultiPage
 Private WithEvents m_cmdSettings As MSForms.CommandButton
 Private WithEvents m_cmdResize As MSForms.CommandButton
-Private WithEvents m_cmdFilter As MSForms.CommandButton
-Private WithEvents m_cmdDraft As MSForms.CommandButton
-Private WithEvents m_cmdPrint As MSForms.CommandButton
 Private WithEvents m_cmdLogClear As MSForms.CommandButton
 Private WithEvents m_lstMail As MSForms.ListBox
 Private WithEvents m_lstAttach As MSForms.ListBox
@@ -61,7 +58,6 @@ Private m_workerLastVersion As Long
 Private m_workerReady As Boolean
 Private m_fileTreeItems As Collection
 Private m_undoStack As Collection
-Private m_filterConditions As Collection
 Private m_loading As Boolean
 Private m_initialLoadDone As Boolean
 Private m_lastWidth As Single
@@ -150,12 +146,6 @@ Private Sub BuildLayout()
     Set m_cmdSettings = AddButton(Me, "cmdSettings", cx, M, 60, 22, "Settings")
     Set m_cmdResize = AddButton(Me, "cmdResize", cx + 64, M, 50, 22, "Resize")
     m_cmdResize.Font.Size = 8
-    Set m_cmdFilter = AddButton(Me, "cmdFilter", cx + 118, M, 50, 22, "Filter")
-    m_cmdFilter.Font.Size = 8
-    Set m_cmdDraft = AddButton(Me, "cmdDraft", cx + 172, M, 50, 22, "Draft")
-    m_cmdDraft.Font.Size = 8
-    Set m_cmdPrint = AddButton(Me, "cmdPrint", cx + 226, M, 50, 22, "Print")
-    m_cmdPrint.Font.Size = 8
 
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
     With m_mpgTabs
@@ -202,70 +192,6 @@ Private Sub m_cmdResize_Click()
     frmResize.ShowFor Me
 End Sub
 
-Private Sub m_cmdPrint_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdPrint_Click"
-    On Error GoTo ErrHandler
-    Dim activeTab As Long: activeTab = m_mpgTabs.Value
-
-    If activeTab = m_mailPageIdx And m_mailPageIdx >= 0 Then
-        ' Print selected mail + attachments
-        If m_lstMail Is Nothing Then Exit Sub
-        Dim mi As Long: mi = m_lstMail.ListIndex
-        If mi < 0 Then MsgBox "Select a mail to print.", vbExclamation: Exit Sub
-        FolioPrint.PrintMailRecord m_matchedMailArr(mi)
-    ElseIf activeTab = m_filesPageIdx And m_filesPageIdx >= 0 Then
-        ' Print selected file(s)
-        If m_lstFiles Is Nothing Then Exit Sub
-        Dim fi As Long: fi = m_lstFiles.ListIndex
-        If fi < 0 Then MsgBox "Select a file to print.", vbExclamation: Exit Sub
-        Dim indices As New Collection: indices.Add fi + 1
-        FolioPrint.PrintFolderFiles m_fileTreeItems, indices
-    Else
-        ' Print current record
-        If m_currentRecIdx > 0 And Not m_currentTable Is Nothing Then
-            FolioPrint.PrintRecord m_currentTable, m_currentRecIdx, m_currentSource
-        Else
-            MsgBox "No record selected.", vbExclamation
-        End If
-    End If
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-Private Sub m_cmdDraft_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdDraft_Click"
-    On Error GoTo ErrHandler
-    frmDraft.Show vbModal
-    Dim choice As String: choice = frmDraft.Choice
-    Unload frmDraft
-    Select Case choice
-        Case "single"
-            If m_currentRecIdx > 0 And Not m_currentTable Is Nothing Then
-                FolioDraft.CreateDraftForRecord m_currentTable, m_currentRecIdx, m_currentSource
-            Else
-                MsgBox "No record selected.", vbExclamation
-            End If
-        Case "bulk"
-            Dim frm As New frmBulkDraft
-            frm.SetContext m_currentTable, m_currentSource
-            frm.Show vbModal
-    End Select
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
-
-Private Sub m_cmdFilter_Click()
-    Dim eh As New ErrorHandler: eh.Enter "frmFolio", "cmdFilter_Click"
-    On Error GoTo ErrHandler
-    Dim fields As Collection: Set fields = FolioConfig.GetFieldNames(m_currentSource)
-    frmFilter.SetFieldNames fields
-    frmFilter.Show vbModal
-    Set m_filterConditions = frmFilter.FilterConditions
-    Unload frmFilter
-    UpdateRecordList
-    eh.OK: Exit Sub
-ErrHandler: eh.Catch
-End Sub
 
 ' Called from frmResize
 Public Sub ApplyResize(newLeftW As Single, newRightW As Single, newWidth As Single, newHeight As Single, newFontSize As Long)
@@ -315,9 +241,6 @@ Private Sub RepositionControls()
     ' Toolbar buttons
     m_cmdSettings.Left = cx
     m_cmdResize.Left = cx + 64
-    m_cmdFilter.Left = cx + 118
-    m_cmdDraft.Left = cx + 172
-    m_cmdPrint.Left = cx + 226
 
     ' Center (tabs)
     m_mpgTabs.Left = cx: m_mpgTabs.Top = M + 26
@@ -851,12 +774,6 @@ Private Sub UpdateRecordList()
             Next col
             If InStr(1, allText, filterText, vbTextCompare) = 0 Then GoTo NextRec
         End If
-        ' Advanced filter conditions
-        If Not m_filterConditions Is Nothing Then
-            If m_filterConditions.Count > 0 Then
-                If Not EvalFilterConditions(r) Then GoTo NextRec
-            End If
-        End If
         Dim label As String: label = ""
         Dim ci As Long
         For ci = 1 To dispCols.Count
@@ -1003,10 +920,25 @@ Private Sub UpdateFilesTab()
     Dim linkVar As Variant: linkVar = TableCellValue(m_currentRecIdx, linkCol)
     Dim linkVal As String
     If Not IsNull(linkVar) And Not IsEmpty(linkVar) Then linkVal = CStr(linkVar)
+    If Len(linkVal) = 0 Then Exit Sub
+
+    ' Send request to BE; response arrives via _folio_files SheetChange
+    FolioMain.SendWorkerRequest "case_files", linkVal
+    eh.OK: Exit Sub
+ErrHandler: eh.Catch
+End Sub
+
+' Called when BE writes case files response to _folio_files
+Private Sub OnCaseFilesResponse()
+    On Error Resume Next
+    If m_filesPageIdx < 0 Then Exit Sub
+    If m_lstFiles Is Nothing Then Exit Sub
+    m_lstFiles.Clear
+    Set m_fileTreeItems = New Collection
 
     Dim caseRoot As String: caseRoot = FolioConfig.GetStr("case_folder_root")
     Dim matched As Object
-    Set matched = FolioData.ReadCaseFiles(caseRoot, linkVal)
+    Set matched = FolioData.ReadCaseFilesFromSheet(ThisWorkbook)
 
     ' Build tree: group by folder_path, show folder nodes then files
     Dim fso As Object: Set fso = CreateObject("Scripting.FileSystemObject")
@@ -1138,57 +1070,6 @@ Private Function TreePrefix(nodes As Collection, idx As Long, depth As Long) As 
     TreePrefix = result
 End Function
 
-' ============================================================================
-' Advanced Filter Evaluation
-' ============================================================================
-
-Private Function EvalFilterConditions(rowIdx As Long) As Boolean
-    On Error Resume Next
-    If m_filterConditions Is Nothing Then EvalFilterConditions = True: Exit Function
-    If m_filterConditions.Count = 0 Then EvalFilterConditions = True: Exit Function
-
-    Dim result As Boolean: result = True
-    Dim i As Long
-    For i = 1 To m_filterConditions.Count
-        Dim cond As Object: Set cond = m_filterConditions(i)
-        Dim fld As String: fld = FolioHelpers.DictStr(cond, "field")
-        Dim op As String: op = FolioHelpers.DictStr(cond, "op")
-        Dim condVal As String: condVal = FolioHelpers.DictStr(cond, "value")
-        Dim logic As String: logic = FolioHelpers.DictStr(cond, "logic", "AND")
-
-        Dim cellVal As Variant: cellVal = TableCellValue(rowIdx, fld)
-        Dim cellStr As String
-        If IsNull(cellVal) Or IsEmpty(cellVal) Then cellStr = "" Else cellStr = CStr(cellVal)
-        Dim matched As Boolean: matched = False
-
-        Select Case op
-            Case "=": matched = (LCase$(cellStr) = LCase$(condVal))
-            Case "<>": matched = (LCase$(cellStr) <> LCase$(condVal))
-            Case ">":
-                If IsNumeric(cellStr) And IsNumeric(condVal) Then matched = (CDbl(cellStr) > CDbl(condVal))
-            Case "<":
-                If IsNumeric(cellStr) And IsNumeric(condVal) Then matched = (CDbl(cellStr) < CDbl(condVal))
-            Case ">=":
-                If IsNumeric(cellStr) And IsNumeric(condVal) Then matched = (CDbl(cellStr) >= CDbl(condVal))
-            Case "<=":
-                If IsNumeric(cellStr) And IsNumeric(condVal) Then matched = (CDbl(cellStr) <= CDbl(condVal))
-            Case "LIKE": matched = (InStr(1, cellStr, condVal, vbTextCompare) > 0)
-        End Select
-
-        If i = 1 Then
-            result = matched
-        Else
-            Dim prevLogic As String: prevLogic = FolioHelpers.DictStr(m_filterConditions(i - 1), "logic", "AND")
-            If prevLogic = "OR" Then
-                result = result Or matched
-            Else
-                result = result And matched
-            End If
-        End If
-    Next i
-    EvalFilterConditions = result
-    On Error GoTo 0
-End Function
 
 ' ============================================================================
 ' Save / Undo
@@ -1314,14 +1195,6 @@ Public Sub OnTableChanged()
 End Sub
 
 ' ============================================================================
-' Worker Signal (via _signal.txt file polling)
-' ============================================================================
-
-' ============================================================================
-' Worker SheetChange callback (called by WorkerWatcher)
-' ============================================================================
-
-' ============================================================================
 ' Worksheet_Change handler — called when BE writes to FE's hidden sheets
 ' All reads are LOCAL (no cross-process). Returns fast.
 ' ============================================================================
@@ -1344,6 +1217,10 @@ Public Sub OnFolioSheetChange(sheetName As String)
         Case "_folio_diff"
             ' Diff log from local sheet
             LogDiffsFromSheet
+
+        Case "_folio_files"
+            ' Case files response from BE
+            OnCaseFilesResponse
     End Select
     On Error GoTo 0
 End Sub
@@ -1364,7 +1241,6 @@ Private Sub LoadDataFromLocalSheets()
 
     If m_currentRecIdx > 0 Then
         UpdateMailTab
-        UpdateFilesTab
     End If
     On Error GoTo 0
 End Sub

@@ -1,17 +1,10 @@
 Attribute VB_Name = "FolioMain"
 Option Explicit
 
-#If VBA7 Then
-Private Declare PtrSafe Function GetWindowThreadProcessId Lib "user32" _
-    (ByVal hwnd As LongPtr, lpdwProcessId As Long) As Long
-#Else
-Private Declare Function GetWindowThreadProcessId Lib "user32" _
-    (ByVal hwnd As Long, lpdwProcessId As Long) As Long
-#End If
-
 Public g_forceClose As Boolean
 Public g_formLoaded As Boolean
 Public g_workerApp As Object
+Public g_workerWb As Object    ' BE's workbook (for FE→BE requests via _folio_request)
 
 ' --- Entry Points ---
 
@@ -66,6 +59,7 @@ Private Sub EnsureFolioSheets()
     EnsureHiddenSheet wb, "_folio_cases"
     EnsureHiddenSheet wb, "_folio_files"
     EnsureHiddenSheet wb, "_folio_diff"
+    EnsureHiddenSheet wb, "_folio_request"
 End Sub
 
 Private Sub EnsureHiddenSheet(wb As Workbook, shName As String)
@@ -77,6 +71,34 @@ Private Sub EnsureHiddenSheet(wb As Workbook, shName As String)
         ws.Name = shName
         ws.Visible = xlSheetVeryHidden
     End If
+End Sub
+
+' --- FE→BE Request ---
+
+Private g_requestId As Long
+
+' Send a request to BE via _folio_request sheet.
+' BE's Workbook_SheetChange dispatches to FolioWorker.ProcessRequest.
+' Response arrives via type-specific FE sheet (e.g. _folio_files).
+Public Sub SendWorkerRequest(reqType As String, ParamArray params() As Variant)
+    If g_workerWb Is Nothing Then Exit Sub
+    On Error Resume Next
+    g_requestId = g_requestId + 1
+    Dim ws As Object: Set ws = g_workerWb.Worksheets("_folio_request")
+    If ws Is Nothing Then Exit Sub
+    ' Clear previous params
+    If ws.UsedRange.Columns.Count > 2 Then
+        ws.Range(ws.Cells(1, 3), ws.Cells(1, ws.UsedRange.Columns.Count)).ClearContents
+    End If
+    ' Write params (C1, D1, ...)
+    Dim i As Long
+    For i = 0 To UBound(params)
+        ws.Cells(1, 3 + i).Value = params(i)
+    Next i
+    ' Write type and id last (id triggers SheetChange)
+    ws.Range("B1").Value = reqType
+    ws.Range("A1").Value = g_requestId
+    On Error GoTo 0
 End Sub
 
 ' --- Worker Lifecycle ---
@@ -91,6 +113,7 @@ Public Sub StartWorker(mailFolder As String, caseRoot As String, _
 
     CleanupZombieWorker
 
+    Dim beforePids As Object: Set beforePids = GetExcelPids()
     Set g_workerApp = CreateObject("Excel.Application")
     g_workerApp.Visible = False
     g_workerApp.DisplayAlerts = False
@@ -99,10 +122,11 @@ Public Sub StartWorker(mailFolder As String, caseRoot As String, _
     g_workerApp.AutomationSecurity = 1
     g_workerApp.Workbooks.Open ThisWorkbook.FullName, ReadOnly:=True, UpdateLinks:=0
     g_workerApp.AutomationSecurity = prevSec
+    Set g_workerWb = g_workerApp.Workbooks(g_workerApp.Workbooks.Count)
 
     g_workerApp.Run "FolioWorker.WorkerEntryPoint", mailFolder, caseRoot, matchField, matchMode, ThisWorkbook
 
-    WriteWorkerPid
+    WriteWorkerPid beforePids
 
     eh.OK: Exit Sub
 ErrHandler:
@@ -116,6 +140,7 @@ End Sub
 Public Sub StopWorker()
     If g_workerApp Is Nothing Then Exit Sub
     On Error Resume Next
+    Set g_workerWb = Nothing
     g_workerApp.Quit
     Set g_workerApp = Nothing
     Dim pidPath As String: pidPath = GetWorkerPidPath()
@@ -129,11 +154,16 @@ Private Function GetWorkerPidPath() As String
     GetWorkerPidPath = ThisWorkbook.path & "\.folio_cache\_worker.pid"
 End Function
 
-Private Sub WriteWorkerPid()
+Private Sub WriteWorkerPid(beforePids As Object)
     On Error Resume Next
     If g_workerApp Is Nothing Then Exit Sub
-    Dim pid As Long
-    GetWindowThreadProcessId g_workerApp.hwnd, pid
+    ' Find the new PID by comparing Excel PIDs before/after CreateObject
+    Dim afterPids As Object: Set afterPids = GetExcelPids()
+    Dim pid As Long: pid = 0
+    Dim k As Variant
+    For Each k In afterPids.keys
+        If Not beforePids.Exists(k) Then pid = CLng(k): Exit For
+    Next k
     If pid = 0 Then Exit Sub
     FolioHelpers.EnsureFolder ThisWorkbook.path & "\.folio_cache"
     Dim pidPath As String: pidPath = GetWorkerPidPath()
@@ -143,6 +173,17 @@ Private Sub WriteWorkerPid()
     Close #f
     On Error GoTo 0
 End Sub
+
+Private Function GetExcelPids() As Object
+    Set GetExcelPids = CreateObject("Scripting.Dictionary")
+    On Error Resume Next
+    Dim wmi As Object: Set wmi = GetObject("winmgmts:\\.\root\cimv2")
+    Dim proc As Object
+    For Each proc In wmi.ExecQuery("SELECT ProcessId FROM Win32_Process WHERE Name = 'EXCEL.EXE'")
+        GetExcelPids(CStr(proc.ProcessId)) = True
+    Next proc
+    On Error GoTo 0
+End Function
 
 Private Sub CleanupZombieWorker()
     On Error Resume Next
