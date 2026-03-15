@@ -10,14 +10,22 @@ Option Explicit
 
 Private g_active As Boolean
 Private g_scheduled As Boolean
-Private g_nextPollAt As Date
-Private g_clockScheduled As Boolean
-Private g_nextClockAt As Date
+Private g_nextYieldAt As Date
 
 Private g_mailFolder As String
 Private g_caseRoot As String
 Private g_signalVersion As Long
 Private g_feWb As Object  ' Reference to FE's workbook (cross-process)
+
+' Switch-style scan: round-robin task index + per-task resume position
+Private Const TASK_MAIL As Long = 0
+Private Const TASK_CASES As Long = 1
+Private Const TASK_WRITE As Long = 2
+Private Const TASK_COUNT As Long = 3
+Private g_nextTask As Long           ' Round-robin: which task to start with
+Private g_mailDirty As Boolean       ' mail scan found changes
+Private g_casesDirty As Boolean      ' cases scan found changes
+Private g_lastRequestId As Long
 
 ' ============================================================================
 ' BE-side cache (formerly FolioScanner)
@@ -562,33 +570,84 @@ Public Sub WorkerInitialScan()
         " diff=" & Format$(tw4 - tw3, "0.000") & _
         " total=" & Format$(tw4 - tw0, "0.000")
 
-    ScheduleNextPoll
+    ' Start switch-style scan loop
+    g_nextTask = TASK_MAIL
+    ScheduleNextChunk
     On Error GoTo 0
 End Sub
 
 ' ============================================================================
-' Poll Loop (5s interval)
+' Switch-style Scan Loop (1s chunk + 1s yield, continuous)
 ' ============================================================================
 
-Public Sub WorkerPollCallback()
+' DoScanChunk: process tasks within 1-second time budget, round-robin
+Public Sub DoScanChunk()
     g_scheduled = False
     If Not g_active Then Exit Sub
     On Error Resume Next
 
-    Dim mailChanged As Boolean, caseChanged As Boolean
-    If Len(g_mailFolder) > 0 Then mailChanged = RefreshMailData(g_mailFolder)
-    If Len(g_caseRoot) > 0 Then caseChanged = RefreshCaseNames(g_caseRoot)
+    Dim t0 As Single: t0 = Timer
+    Dim startTask As Long: startTask = g_nextTask
 
-    If mailChanged Or caseChanged Then
-        g_signalVersion = g_signalVersion + 1
-        If mailChanged Then WriteMailToFE: WriteMailIndexToFE
-        If caseChanged Then WriteCasesToFE
-        WriteDiffToFE
-        ClearDiffs
-        WriteVersionToFE g_signalVersion
+    Do
+        Select Case g_nextTask
+            Case TASK_MAIL
+                If Len(g_mailFolder) > 0 Then
+                    If RefreshMailData(g_mailFolder) Then g_mailDirty = True
+                End If
+            Case TASK_CASES
+                If Len(g_caseRoot) > 0 Then
+                    If RefreshCaseNames(g_caseRoot) Then g_casesDirty = True
+                End If
+            Case TASK_WRITE
+                If g_mailDirty Or g_casesDirty Then
+                    g_signalVersion = g_signalVersion + 1
+                    If g_mailDirty Then WriteMailToFE: WriteMailIndexToFE
+                    If g_casesDirty Then WriteCasesToFE
+                    WriteDiffToFE
+                    ClearDiffs
+                    WriteVersionToFE g_signalVersion
+                    g_mailDirty = False
+                    g_casesDirty = False
+                End If
+        End Select
+        g_nextTask = (g_nextTask + 1) Mod TASK_COUNT
+        If Timer - t0 >= 1 Then Exit Do
+    Loop Until g_nextTask = startTask
+
+    ' Schedule Yield (returns control to message loop, then next chunk)
+    If g_active Then
+        g_nextYieldAt = Now
+        Application.OnTime g_nextYieldAt, "FolioWorker.YieldCallback"
+        g_scheduled = True
     End If
+    On Error GoTo 0
+End Sub
 
-    If g_active Then ScheduleNextPoll
+' YieldCallback: clock update + request handling, then schedule next chunk
+Public Sub YieldCallback()
+    g_scheduled = False
+    If Not g_active Then Exit Sub
+    On Error Resume Next
+
+    ' Clock update (replaces ClockCallback)
+    WriteClockToFE
+
+    ' Handle pending FE requests
+    ProcessRequest
+
+    ' Schedule next scan chunk (1s later)
+    If g_active Then ScheduleNextChunk
+    On Error GoTo 0
+End Sub
+
+Private Sub ScheduleNextChunk()
+    If g_scheduled Then Exit Sub
+    On Error Resume Next
+    Dim nextAt As Date: nextAt = Now + TimeSerial(0, 0, 1)
+    Application.OnTime nextAt, "FolioWorker.DoScanChunk"
+    g_scheduled = True
+    If Err.Number <> 0 Then g_scheduled = False: Err.Clear
     On Error GoTo 0
 End Sub
 
@@ -606,16 +665,12 @@ Public Sub UpdateConfig(mailFolder As String, caseRoot As String, _
     ClearCache
     SetMailMatchConfig matchField, matchMode
 
-    If Len(g_mailFolder) > 0 Then RefreshMailData g_mailFolder
-    If Len(g_caseRoot) > 0 Then RefreshCaseNames g_caseRoot
-
-    g_signalVersion = g_signalVersion + 1
-    WriteMailToFE
-    WriteMailIndexToFE
-    WriteCasesToFE
-    WriteDiffToFE
-    ClearDiffs
-    WriteVersionToFE g_signalVersion
+    ' Force immediate full scan on next chunk
+    g_mailDirty = False
+    g_casesDirty = False
+    m_mailDiffReady = False
+    m_caseDiffReady = False
+    g_nextTask = TASK_MAIL
 
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
@@ -624,8 +679,6 @@ End Sub
 ' ============================================================================
 ' FE->BE Request Dispatcher (called via Workbook_SheetChange -> OnTime)
 ' ============================================================================
-
-Private g_lastRequestId As Long
 
 Public Sub ProcessRequest()
     If Not g_active Then Exit Sub
@@ -722,14 +775,7 @@ End Sub
 Public Sub WorkerStop()
     g_active = False
     On Error Resume Next
-    If g_scheduled Then
-        Application.OnTime g_nextPollAt, "FolioWorker.WorkerPollCallback", , False
-    End If
     g_scheduled = False
-    If g_clockScheduled Then
-        Application.OnTime g_nextClockAt, "FolioWorker.ClockCallback", , False
-    End If
-    g_clockScheduled = False
     Set g_feWb = Nothing
     On Error GoTo 0
 End Sub
@@ -906,36 +952,3 @@ Private Sub WriteSignalToFE(ver As Long, timing As String)
     ws.Range("C1").Value = timing
 End Sub
 
-' ============================================================================
-' Timer
-' ============================================================================
-
-' Clock timer (1 second, independent of scan poll)
-Public Sub ClockCallback()
-    g_clockScheduled = False
-    If Not g_active Then Exit Sub
-    On Error Resume Next
-    WriteClockToFE
-    On Error GoTo 0
-    ScheduleNextClock
-End Sub
-
-Private Sub ScheduleNextClock()
-    If g_clockScheduled Then Exit Sub
-    On Error Resume Next
-    g_nextClockAt = Now + TimeSerial(0, 0, 1)
-    Application.OnTime g_nextClockAt, "FolioWorker.ClockCallback"
-    g_clockScheduled = True
-    If Err.Number <> 0 Then g_clockScheduled = False: Err.Clear
-    On Error GoTo 0
-End Sub
-
-Private Sub ScheduleNextPoll()
-    If g_scheduled Then Exit Sub
-    On Error Resume Next
-    g_nextPollAt = Now + TimeSerial(0, 0, 5)
-    Application.OnTime g_nextPollAt, "FolioWorker.WorkerPollCallback"
-    g_scheduled = True
-    If Err.Number <> 0 Then g_scheduled = False: Err.Clear
-    On Error GoTo 0
-End Sub
