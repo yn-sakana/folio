@@ -4,8 +4,7 @@ Option Explicit
 Public g_forceClose As Boolean
 Public g_formLoaded As Boolean
 Public g_workerApp As Object
-Public g_workerWb As Object    ' BE's workbook (for FE→BE requests via _folio_request)
-Private g_requestId As Long
+Public g_workerWb As Object
 
 ' --- Entry Points ---
 
@@ -61,7 +60,6 @@ Private Sub EnsureFolioSheets()
     EnsureHiddenSheet wb, "_folio_cases"
     EnsureHiddenSheet wb, "_folio_files"
     EnsureHiddenSheet wb, "_folio_diff"
-    EnsureHiddenSheet wb, "_folio_request"
 End Sub
 
 Private Sub EnsureHiddenSheet(wb As Workbook, shName As String)
@@ -73,32 +71,6 @@ Private Sub EnsureHiddenSheet(wb As Workbook, shName As String)
         ws.Name = shName
         ws.Visible = xlSheetVeryHidden
     End If
-End Sub
-
-' --- FE→BE Request ---
-
-' Send a request to BE via _folio_request sheet.
-' BE's Workbook_SheetChange dispatches to FolioWorker.ProcessRequest.
-' Response arrives via type-specific FE sheet (e.g. _folio_files).
-Public Sub SendWorkerRequest(reqType As String, ParamArray params() As Variant)
-    If g_workerWb Is Nothing Then Exit Sub
-    On Error Resume Next
-    g_requestId = g_requestId + 1
-    Dim ws As Object: Set ws = g_workerWb.Worksheets("_folio_request")
-    If ws Is Nothing Then Exit Sub
-    ' Clear previous params
-    If ws.UsedRange.Columns.Count > 2 Then
-        ws.Range(ws.Cells(1, 3), ws.Cells(1, ws.UsedRange.Columns.Count)).ClearContents
-    End If
-    ' Write params (C1, D1, ...)
-    Dim i As Long
-    For i = 0 To UBound(params)
-        ws.Cells(1, 3 + i).Value = params(i)
-    Next i
-    ' Write type and id last (id triggers SheetChange)
-    ws.Range("B1").Value = reqType
-    ws.Range("A1").Value = g_requestId
-    On Error GoTo 0
 End Sub
 
 ' --- Worker Lifecycle ---
@@ -175,14 +147,15 @@ Private Sub WriteWorkerPid(beforePids As Object)
 End Sub
 
 Private Function GetExcelPids() As Object
-    Set GetExcelPids = CreateObject("Scripting.Dictionary")
+    Dim d As Object: Set d = CreateObject("Scripting.Dictionary")
     On Error Resume Next
     Dim wmi As Object: Set wmi = GetObject("winmgmts:\\.\root\cimv2")
     Dim proc As Object
     For Each proc In wmi.ExecQuery("SELECT ProcessId FROM Win32_Process WHERE Name = 'EXCEL.EXE'")
-        GetExcelPids(CStr(proc.ProcessId)) = True
+        d(CStr(proc.ProcessId)) = True
     Next proc
     On Error GoTo 0
+    Set GetExcelPids = d
 End Function
 
 Private Sub CleanupZombieWorker()

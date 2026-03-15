@@ -9,6 +9,7 @@ Option Explicit
 Private m_feMailRecords As Object    ' Dict: entry_id -> record Dict
 Private m_feMailIndex As Object      ' Dict: normalized_key -> Dict(entry_id -> True)
 Private m_feCaseNames As Object      ' Dict: folder_name -> True
+Private m_feCaseFiles As Object      ' Dict: case_id -> Dict(file_path -> record Dict)
 
 ' ============================================================================
 ' Table Operations (FE: reads/writes the source Excel file directly)
@@ -141,33 +142,6 @@ Public Function GetCaseCount() As Long
 End Function
 
 
-' FE: Read case files directly from _folio_files sheet (on-demand response from BE)
-Public Function ReadCaseFilesFromSheet(wb As Workbook) As Object
-    Dim result As Object: Set result = FolioLib.NewDict()
-    Set ReadCaseFilesFromSheet = result
-    On Error GoTo ErrOut
-    Dim ws As Worksheet: Set ws = wb.Worksheets("_folio_files")
-    If ws.Range("A1").Value = "" Then Exit Function
-    Dim data As Variant: data = ws.UsedRange.Value
-    If IsEmpty(data) Then Exit Function
-    If UBound(data, 2) < 7 Then Exit Function
-    Dim i As Long
-    For i = 1 To UBound(data, 1)
-        Dim rec As Object: Set rec = FolioLib.NewDict()
-        rec.Add "case_id", CStr(data(i, 1))
-        rec.Add "file_name", CStr(data(i, 2))
-        rec.Add "file_path", CStr(data(i, 3))
-        rec.Add "folder_path", CStr(data(i, 4))
-        rec.Add "relative_path", CStr(data(i, 5))
-        rec.Add "file_size", CStr(data(i, 6))
-        rec.Add "modified_at", CStr(data(i, 7))
-        Set result(CStr(data(i, 3))) = rec
-    Next i
-    Set ReadCaseFilesFromSheet = result
-    Exit Function
-ErrOut:
-End Function
-
 Public Sub CreateCaseFolder(rootPath As String, caseId As String, displayName As String)
     Dim eh As New ErrorHandler: eh.Enter "FolioData", "CreateCaseFolder"
     On Error GoTo ErrHandler
@@ -198,6 +172,9 @@ Public Sub LoadFromLocalSheets(wb As Workbook)
 
     Set ws = wb.Worksheets("_folio_cases")
     If Not ws Is Nothing Then LoadCasesFromLocalSheet wb
+
+    Set ws = wb.Worksheets("_folio_files")
+    If Not ws Is Nothing Then LoadCaseFilesFromLocalSheet wb
 
     On Error GoTo 0
 End Sub
@@ -281,3 +258,56 @@ Private Sub LoadCasesFromLocalSheet(wb As Workbook)
     Exit Sub
 ErrOut:
 End Sub
+
+' Load ALL case files into Dict indexed by case_id (from _folio_files sheet)
+Private Sub LoadCaseFilesFromLocalSheet(wb As Workbook)
+    On Error GoTo ErrOut
+    Dim ws As Worksheet: Set ws = wb.Worksheets("_folio_files")
+    If ws.Range("A1").Value = "" Then Exit Sub
+    Dim data As Variant: data = ws.UsedRange.Value
+    If IsEmpty(data) Then Exit Sub
+    If UBound(data, 2) < 7 Then Exit Sub
+    Dim newFiles As Object: Set newFiles = FolioLib.NewDict()
+    Dim i As Long
+    For i = 1 To UBound(data, 1)
+        Dim cid As String: cid = CStr(data(i, 1))
+        If Len(cid) = 0 Then GoTo NextFile
+        If Not newFiles.Exists(cid) Then newFiles.Add cid, FolioLib.NewDict()
+        Dim inner As Object: Set inner = newFiles(cid)
+        Dim rec As Object: Set rec = FolioLib.NewDict()
+        rec.Add "case_id", cid
+        rec.Add "file_name", CStr(data(i, 2))
+        rec.Add "file_path", CStr(data(i, 3))
+        rec.Add "folder_path", CStr(data(i, 4))
+        rec.Add "relative_path", CStr(data(i, 5))
+        rec.Add "file_size", CStr(data(i, 6))
+        rec.Add "modified_at", CStr(data(i, 7))
+        Set inner(CStr(data(i, 3))) = rec
+NextFile:
+    Next i
+    Set m_feCaseFiles = newFiles
+    Exit Sub
+ErrOut:
+End Sub
+
+' O(1) lookup: get all files for a specific case ID
+Public Function FindCaseFiles(caseId As String) As Object
+    Set FindCaseFiles = FolioLib.NewDict()
+    If m_feCaseFiles Is Nothing Then Exit Function
+    If Len(caseId) = 0 Then Exit Function
+    ' Prefix match: case folder may be "R06-001" or "R06-001_Name"
+    Dim keys As Variant
+    If m_feCaseFiles.Count = 0 Then Exit Function
+    keys = m_feCaseFiles.keys
+    Dim i As Long
+    For i = 0 To UBound(keys)
+        Dim k As String: k = CStr(keys(i))
+        Dim baseName As String: baseName = k
+        Dim usPos As Long: usPos = InStr(baseName, "_")
+        If usPos > 0 Then baseName = Left$(baseName, usPos - 1)
+        If LCase$(baseName) = LCase$(caseId) Then
+            Set FindCaseFiles = m_feCaseFiles(k)
+            Exit Function
+        End If
+    Next i
+End Function

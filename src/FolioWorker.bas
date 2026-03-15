@@ -25,7 +25,6 @@ Private Const TASK_COUNT As Long = 3
 Private g_nextTask As Long           ' Round-robin: which task to start with
 Private g_mailDirty As Boolean       ' mail scan found changes
 Private g_casesDirty As Boolean      ' cases scan found changes
-Private g_lastRequestId As Long
 
 ' ============================================================================
 ' BE-side cache (formerly FolioScanner)
@@ -48,6 +47,8 @@ Private m_caseAdded As Object
 Private m_caseRemoved As Object
 Private m_caseDiffReady As Boolean
 Private m_caseRootMod As Date       ' Last known case root folder mod time
+Private m_caseFiles As Object       ' Dict: full_file_path -> tab-separated line (all cases)
+Private m_caseFilesDirty As Boolean
 
 Private Sub LogProfile(msg As String)
     On Error Resume Next
@@ -75,6 +76,8 @@ Public Sub ClearCache()
     Set m_caseNames = Nothing
     m_caseDiffReady = False
     m_caseRootMod = #1/1/1900#
+    Set m_caseFiles = Nothing
+    m_caseFilesDirty = False
 End Sub
 
 ' ============================================================================
@@ -491,7 +494,64 @@ Public Function RefreshCaseNames(rootPath As String) As Boolean
 ErrHandler: eh.Catch
 End Function
 
+' Scan files for ALL case folders. Runs as part of TASK_CASES.
+Public Function RefreshCaseFiles(rootPath As String) As Boolean
+    On Error Resume Next
+    RefreshCaseFiles = False
+    If m_caseNames Is Nothing Then Exit Function
+    If m_caseNames.Count = 0 Then Exit Function
 
+    Dim t0 As Single: t0 = Timer
+    Dim newFiles As Object: Set newFiles = FolioLib.NewDict()
+    Dim caseKeys As Variant: caseKeys = m_caseNames.keys
+    Dim i As Long, seq As Long: seq = 0
+    For i = 0 To UBound(caseKeys)
+        Dim caseName As String: caseName = CStr(caseKeys(i))
+        Dim casePath As String: casePath = rootPath & "\" & caseName
+        Dim before As Long: before = seq
+        ScanCaseDirToDict casePath, caseName, casePath, newFiles, seq
+    Next i
+    LogProfile "RefreshCaseFiles: " & newFiles.Count & " files in " & Format$(Timer - t0, "0.000") & "s"
+
+    Dim prevCount As Long: prevCount = 0
+    If Not m_caseFiles Is Nothing Then prevCount = m_caseFiles.Count
+    Set m_caseFiles = newFiles
+    If newFiles.Count <> prevCount Then
+        m_caseFilesDirty = True
+        RefreshCaseFiles = True
+    End If
+    On Error GoTo 0
+End Function
+
+' Like ScanCaseDir but appends directly to a Dict (key = seq number, value = tab line)
+Private Sub ScanCaseDirToDict(ByVal folderPath As String, caseId As String, rootPath As String, files As Object, seq As Long)
+    On Error Resume Next
+    Dim entries() As String, cnt As Long: cnt = 0
+    Dim d As String: d = Dir$(folderPath & "\*", vbDirectory Or vbNormal)
+    Do While Len(d) > 0
+        If d <> "." And d <> ".." Then
+            cnt = cnt + 1
+            If cnt = 1 Then ReDim entries(0 To 0) Else ReDim Preserve entries(0 To cnt - 1)
+            entries(cnt - 1) = d
+        End If
+        d = Dir$
+    Loop
+    Dim i As Long
+    For i = 0 To cnt - 1
+        Dim fullPath As String: fullPath = folderPath & "\" & entries(i)
+        Dim attr As Long: attr = GetAttr(fullPath)
+        If (attr And vbDirectory) = vbDirectory Then
+            ScanCaseDirToDict fullPath, caseId, rootPath, files, seq
+        Else
+            seq = seq + 1
+            files(CStr(seq)) = caseId & vbTab & entries(i) & vbTab & _
+                fullPath & vbTab & folderPath & vbTab & _
+                Mid$(fullPath, Len(rootPath) + 2) & vbTab & _
+                CStr(FileLen(fullPath)) & vbTab & CStr(FileDateTime(fullPath))
+        End If
+    Next i
+    On Error GoTo 0
+End Sub
 
 Public Function GetCaseAdded() As Object
     If m_caseAdded Is Nothing Then Set m_caseAdded = FolioLib.NewDict()
@@ -548,15 +608,17 @@ Public Sub WorkerInitialScan()
     If Len(g_mailFolder) > 0 Then RefreshMailData g_mailFolder
     Dim t1 As Single: t1 = Timer
     If Len(g_caseRoot) > 0 Then RefreshCaseNames g_caseRoot
+    If Len(g_caseRoot) > 0 Then RefreshCaseFiles g_caseRoot
     Dim t2 As Single: t2 = Timer
 
-    ' Write all data to FE sheets (case files are on-demand, not written here)
+    ' Write all data to FE sheets
     Dim tw0 As Single: tw0 = Timer
     WriteMailToFE
     Dim tw1 As Single: tw1 = Timer
     WriteMailIndexToFE
     Dim tw2 As Single: tw2 = Timer
     WriteCasesToFE
+    WriteCaseFilesToFE
     Dim tw3 As Single: tw3 = Timer
     WriteDiffToFE
     ClearDiffs
@@ -598,12 +660,14 @@ Public Sub DoScanChunk()
             Case TASK_CASES
                 If Len(g_caseRoot) > 0 Then
                     If RefreshCaseNames(g_caseRoot) Then g_casesDirty = True
+                    RefreshCaseFiles g_caseRoot
                 End If
             Case TASK_WRITE
-                If g_mailDirty Or g_casesDirty Then
+                If g_mailDirty Or g_casesDirty Or m_caseFilesDirty Then
                     g_signalVersion = g_signalVersion + 1
                     If g_mailDirty Then WriteMailToFE: WriteMailIndexToFE
                     If g_casesDirty Then WriteCasesToFE
+                    If m_caseFilesDirty Then WriteCaseFilesToFE
                     WriteDiffToFE
                     ClearDiffs
                     WriteVersionToFE g_signalVersion
@@ -624,16 +688,11 @@ Public Sub DoScanChunk()
     On Error GoTo 0
 End Sub
 
-' YieldCallback: clock update + request handling, then schedule next chunk
+' YieldCallback: yield then schedule next chunk
 Public Sub YieldCallback()
     g_scheduled = False
     If Not g_active Then Exit Sub
     On Error Resume Next
-
-    ' Handle pending FE requests
-    ProcessRequest
-
-    ' Schedule next scan chunk (1s later)
     If g_active Then ScheduleNextChunk
     On Error GoTo 0
 End Sub
@@ -677,69 +736,6 @@ End Sub
 ' FE->BE Request Dispatcher (called via Workbook_SheetChange -> OnTime)
 ' ============================================================================
 
-Public Sub ProcessRequest()
-    If Not g_active Then Exit Sub
-    On Error Resume Next
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets("_folio_request")
-    If ws Is Nothing Then Exit Sub
-
-    Dim reqId As Long: reqId = CLng(ws.Range("A1").Value)
-    If reqId = g_lastRequestId Then Exit Sub
-    g_lastRequestId = reqId
-
-    Dim reqType As String: reqType = CStr(ws.Range("B1").Value)
-    Select Case reqType
-        Case "case_files"
-            HandleCaseFilesRequest CStr(ws.Range("C1").Value)
-    End Select
-    On Error GoTo 0
-End Sub
-
-Private Sub HandleCaseFilesRequest(caseId As String)
-    If Len(caseId) = 0 Then Exit Sub
-    If Len(g_caseRoot) = 0 Then Exit Sub
-
-    ' Find matching case folder (prefix match before "_")
-    Dim d As String: d = Dir$(g_caseRoot & "\*", vbDirectory)
-    Dim folderPath As String
-    Do While Len(d) > 0
-        If d <> "." And d <> ".." Then
-            Dim baseName As String: baseName = d
-            Dim usPos As Long: usPos = InStr(baseName, "_")
-            If usPos > 0 Then baseName = Left$(baseName, usPos - 1)
-            If LCase$(baseName) = LCase$(caseId) Then
-                folderPath = g_caseRoot & "\" & d
-                Exit Do
-            End If
-        End If
-        d = Dir$
-    Loop
-    If Len(folderPath) = 0 Then
-        ' No matching folder -- clear files sheet
-        Dim wsClear As Object: Set wsClear = FESheet("_folio_files")
-        If Not wsClear Is Nothing Then wsClear.UsedRange.ClearContents
-        Exit Sub
-    End If
-
-    ' Scan files recursively (Dir$-based, ~4ms per case)
-    Dim lines As New Collection
-    ScanCaseDir folderPath, d, folderPath, lines
-
-    ' Write to FE's _folio_files sheet
-    Dim ws As Object: Set ws = FESheet("_folio_files")
-    If ws Is Nothing Then Exit Sub
-    ws.UsedRange.ClearContents
-    If lines.Count = 0 Then Exit Sub
-
-    Dim data() As Variant: ReDim data(1 To lines.Count, 1 To 7)
-    Dim i As Long
-    For i = 1 To lines.Count
-        Dim parts() As String: parts = Split(lines(i), vbTab)
-        Dim c As Long
-        For c = 0 To 6: data(i, c + 1) = parts(c): Next c
-    Next i
-    ws.Range("A1").Resize(lines.Count, 7).Value = data
-End Sub
 
 Private Sub ScanCaseDir(ByVal folderPath As String, caseId As String, rootPath As String, lines As Collection)
     On Error Resume Next
@@ -877,6 +873,31 @@ Private Sub WriteCasesToFE()
     ws.Range("A1").Resize(n, 1).Value = data
 End Sub
 
+
+Private Sub WriteCaseFilesToFE()
+    On Error Resume Next
+    Dim ws As Object: Set ws = FESheet("_folio_files")
+    If ws Is Nothing Then Exit Sub
+    ws.UsedRange.ClearContents
+
+    If m_caseFiles Is Nothing Then m_caseFilesDirty = False: Exit Sub
+    If m_caseFiles.Count = 0 Then m_caseFilesDirty = False: Exit Sub
+
+    Dim keys As Variant: keys = m_caseFiles.keys
+    Dim n As Long: n = m_caseFiles.Count
+    Dim data() As Variant: ReDim data(1 To n, 1 To 7)
+    Dim i As Long
+    For i = 0 To UBound(keys)
+        Dim parts() As String: parts = Split(CStr(m_caseFiles(keys(i))), vbTab)
+        If UBound(parts) >= 6 Then
+            Dim c As Long
+            For c = 0 To 6: data(i + 1, c + 1) = parts(c): Next c
+        End If
+    Next i
+    ws.Range("A1").Resize(n, 7).Value = data
+    m_caseFilesDirty = False
+    On Error GoTo 0
+End Sub
 
 Private Sub WriteDiffToFE()
     Dim ws As Object: Set ws = FESheet("_folio_diff")
