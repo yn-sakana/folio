@@ -94,14 +94,22 @@ Public Function RefreshMailData(folderPath As String) As Boolean
     Dim manifestPath As String: manifestPath = folderPath & "\manifest.tsv"
     Dim hasManifest As Boolean: hasManifest = (Len(Dir$(manifestPath)) > 0)
 
+    ' Always check root folder mtime (detects added/removed subfolders)
+    Dim curMailMod As Date: curMailMod = FileDateTime(folderPath)
     If hasManifest Then
         Dim curManifestMod As Date: curManifestMod = FileDateTime(manifestPath)
-        If m_mailDiffReady And curManifestMod = m_manifestMod Then eh.OK: Exit Function
-        m_manifestMod = curManifestMod
-        LoadMailFromManifest manifestPath
+        If m_mailDiffReady And curManifestMod = m_manifestMod And curMailMod = m_mailRootMod Then eh.OK: Exit Function
+        If curMailMod <> m_mailRootMod Then
+            ' Root folder changed — rescan and rebuild manifest
+            m_mailRootMod = curMailMod
+            ScanMailDirAndBuildManifest folderPath, manifestPath
+            m_manifestMod = FileDateTime(manifestPath)
+        Else
+            ' Only manifest changed (external edit)
+            m_manifestMod = curManifestMod
+            LoadMailFromManifest manifestPath
+        End If
     Else
-        ' Fallback: Dir$ + meta.json scan (one-time migration)
-        Dim curMailMod As Date: curMailMod = FileDateTime(folderPath)
         If m_mailDiffReady And curMailMod = m_mailRootMod Then eh.OK: Exit Function
         m_mailRootMod = curMailMod
         ScanMailDirAndBuildManifest folderPath, manifestPath
