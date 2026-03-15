@@ -337,6 +337,7 @@ Private Sub ExportMailItem(ByVal mail As Outlook.MailItem, ByVal folderRoot As S
 
     Set attachmentNames = SaveAttachments(mail, mailRoot)
     WriteMetaFile metaPath, mail, attachmentNames, accountSmtp
+    AppendManifest GetExportRoot(), mail, mailRoot, attachmentNames, accountSmtp
     Exit Sub
 
 MailError:
@@ -380,6 +381,47 @@ Private Sub WriteMetaFile(ByVal path As String, ByVal mail As Outlook.MailItem, 
         "}"
 
     WriteTextFile path, body
+End Sub
+
+' ============================================================================
+' Manifest (manifest.tsv at export root — single source of truth for scanner)
+' Format: entry_id<TAB>sender_email<TAB>sender_name<TAB>subject<TAB>received_at
+'         <TAB>folder_path<TAB>body_path<TAB>msg_path<TAB>attachment_paths<TAB>_mail_folder
+' ============================================================================
+
+Private Sub AppendManifest(ByVal exportRoot As String, ByVal mail As Outlook.MailItem, _
+        ByVal mailRoot As String, ByVal attachmentNames As Collection, ByVal accountSmtp As String)
+    On Error Resume Next
+    If Len(exportRoot) = 0 Then Exit Sub
+    Dim manifestPath As String: manifestPath = exportRoot & "\manifest.tsv"
+
+    ' Build attachment paths (pipe-separated, full paths)
+    Dim attStr As String: attStr = ""
+    Dim i As Long
+    For i = 1 To attachmentNames.Count
+        If i > 1 Then attStr = attStr & "|"
+        attStr = attStr & mailRoot & "\" & CStr(attachmentNames(i))
+    Next i
+
+    ' Build TSV line (same 10 columns as _folio_mail sheet)
+    Dim line As String
+    line = mail.EntryID & vbTab & _
+        GetSenderAddress(mail) & vbTab & _
+        mail.SenderName & vbTab & _
+        Replace(Replace(mail.Subject, vbTab, " "), vbLf, " ") & vbTab & _
+        Format$(mail.ReceivedTime, "yyyy-mm-dd\Thh:nn:ss") & vbTab & _
+        mail.Parent.FolderPath & vbTab & _
+        mailRoot & "\body.txt" & vbTab & _
+        mailRoot & "\mail.msg" & vbTab & _
+        attStr & vbTab & _
+        mailRoot
+
+    ' Append to manifest
+    Dim f As Integer: f = FreeFile
+    Open manifestPath For Append As #f
+    Print #f, line
+    Close #f
+    On Error GoTo 0
 End Sub
 
 ' --- Helpers ---
