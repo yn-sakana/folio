@@ -32,7 +32,7 @@ Public Sub WorkerEntryPoint(mailFolder As String, caseRoot As String, _
     g_mailFolder = mailFolder
     g_caseRoot = caseRoot
     Set g_feWb = feWorkbook
-    FolioData.SetMailMatchConfig matchField, matchMode
+    FolioScanner.SetMailMatchConfig matchField, matchMode
     Application.EnableEvents = True
 
     g_signalVersion = 0
@@ -52,9 +52,9 @@ Public Sub WorkerInitialScan()
     On Error Resume Next
 
     Dim t0 As Single: t0 = Timer
-    If Len(g_mailFolder) > 0 Then FolioData.RefreshMailData g_mailFolder
+    If Len(g_mailFolder) > 0 Then FolioScanner.RefreshMailData g_mailFolder
     Dim t1 As Single: t1 = Timer
-    If Len(g_caseRoot) > 0 Then FolioData.RefreshCaseNames g_caseRoot
+    If Len(g_caseRoot) > 0 Then FolioScanner.RefreshCaseNames g_caseRoot
     Dim t2 As Single: t2 = Timer
 
     ' Write all data to FE sheets (case files are on-demand, not written here)
@@ -66,7 +66,7 @@ Public Sub WorkerInitialScan()
     WriteCasesToFE
     Dim tw3 As Single: tw3 = Timer
     WriteDiffToFE
-    FolioData.ClearDiffs
+    FolioScanner.ClearDiffs
     g_signalVersion = 1
     Dim tw4 As Single: tw4 = Timer
     WriteSignalToFE g_signalVersion, "scan mail=" & Format$(t1 - t0, "0.000") & _
@@ -91,15 +91,15 @@ Public Sub WorkerPollCallback()
     On Error Resume Next
 
     Dim mailChanged As Boolean, caseChanged As Boolean
-    If Len(g_mailFolder) > 0 Then mailChanged = FolioData.RefreshMailData(g_mailFolder)
-    If Len(g_caseRoot) > 0 Then caseChanged = FolioData.RefreshCaseNames(g_caseRoot)
+    If Len(g_mailFolder) > 0 Then mailChanged = FolioScanner.RefreshMailData(g_mailFolder)
+    If Len(g_caseRoot) > 0 Then caseChanged = FolioScanner.RefreshCaseNames(g_caseRoot)
 
     If mailChanged Or caseChanged Then
         g_signalVersion = g_signalVersion + 1
         If mailChanged Then WriteMailToFE: WriteMailIndexToFE
         If caseChanged Then WriteCasesToFE
         WriteDiffToFE
-        FolioData.ClearDiffs
+        FolioScanner.ClearDiffs
         WriteVersionToFE g_signalVersion
     End If
 
@@ -118,18 +118,18 @@ Public Sub UpdateConfig(mailFolder As String, caseRoot As String, _
 
     g_mailFolder = mailFolder
     g_caseRoot = caseRoot
-    FolioData.ClearCache
-    FolioData.SetMailMatchConfig matchField, matchMode
+    FolioScanner.ClearCache
+    FolioScanner.SetMailMatchConfig matchField, matchMode
 
-    If Len(g_mailFolder) > 0 Then FolioData.RefreshMailData g_mailFolder
-    If Len(g_caseRoot) > 0 Then FolioData.RefreshCaseNames g_caseRoot
+    If Len(g_mailFolder) > 0 Then FolioScanner.RefreshMailData g_mailFolder
+    If Len(g_caseRoot) > 0 Then FolioScanner.RefreshCaseNames g_caseRoot
 
     g_signalVersion = g_signalVersion + 1
     WriteMailToFE
     WriteMailIndexToFE
     WriteCasesToFE
     WriteDiffToFE
-    FolioData.ClearDiffs
+    FolioScanner.ClearDiffs
     WriteVersionToFE g_signalVersion
 
     eh.OK: Exit Sub
@@ -265,7 +265,7 @@ Private Sub WriteMailToFE()
     If ws Is Nothing Then Exit Sub
     ws.UsedRange.ClearContents
 
-    Dim records As Object: Set records = FolioData.GetMailRecords()
+    Dim records As Object: Set records = FolioScanner.GetMailRecords()
     If records Is Nothing Then Exit Sub
     If records.Count = 0 Then Exit Sub
 
@@ -307,7 +307,7 @@ Private Sub WriteMailIndexToFE()
     If ws Is Nothing Then Exit Sub
     ws.UsedRange.ClearContents
 
-    Dim idx As Object: Set idx = FolioData.GetMailIndex()
+    Dim idx As Object: Set idx = FolioScanner.GetMailIndex()
     If idx Is Nothing Then Exit Sub
     If idx.Count = 0 Then Exit Sub
 
@@ -337,7 +337,7 @@ Private Sub WriteCasesToFE()
     If ws Is Nothing Then Exit Sub
     ws.UsedRange.ClearContents
 
-    Dim names As Object: Set names = FolioData.GetCaseNames()
+    Dim names As Object: Set names = FolioScanner.GetCaseNames()
     If names Is Nothing Then Exit Sub
     If names.Count = 0 Then Exit Sub
 
@@ -355,10 +355,10 @@ Private Sub WriteDiffToFE()
     If ws Is Nothing Then Exit Sub
     ws.UsedRange.ClearContents
 
-    Dim ma As Object: Set ma = FolioData.GetMailAdded()
-    Dim mr As Object: Set mr = FolioData.GetMailRemoved()
-    Dim ca As Object: Set ca = FolioData.GetCaseAdded()
-    Dim cr As Object: Set cr = FolioData.GetCaseRemoved()
+    Dim ma As Object: Set ma = FolioScanner.GetMailAdded()
+    Dim mr As Object: Set mr = FolioScanner.GetMailRemoved()
+    Dim ca As Object: Set ca = FolioScanner.GetCaseAdded()
+    Dim cr As Object: Set cr = FolioScanner.GetCaseRemoved()
     Dim total As Long: total = ma.Count + mr.Count + ca.Count + cr.Count
     If total = 0 Then Exit Sub
 
