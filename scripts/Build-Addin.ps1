@@ -123,8 +123,9 @@ Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
     On Error Resume Next
     Dim sn As String: sn = Sh.Name
     If Left$(sn, 6) <> "_folio" Then Exit Sub
-    ' FE side: forward to UI
+    Application.ScreenUpdating = False
     If FolioMain.g_formLoaded Then frmFolio.OnFolioSheetChange sn
+    Application.ScreenUpdating = True
     On Error GoTo 0
 End Sub
 '@
@@ -163,6 +164,7 @@ End Sub
     $srcSheet.Range("C1").Value2 = "display_name_column"
     $srcSheet.Range("D1").Value2 = "mail_link_column"
     $srcSheet.Range("E1").Value2 = "folder_link_column"
+    $srcSheet.Range("F1").Value2 = "mail_match_mode"
     if ($Sample) {
         # Read column names from sample xlsx (no hardcoded Japanese)
         $sampleWb = $excel.Workbooks.Open($sampleXlsx, 0, $true)

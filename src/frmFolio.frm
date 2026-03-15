@@ -115,7 +115,6 @@ Private Sub UserForm_Initialize()
     m_loading = True
     eh.Trace "BuildLayout"
     BuildLayout
-    m_loading = False
 
     eh.Trace "LoadSources"
     LoadSources
@@ -130,6 +129,8 @@ Private Sub UserForm_Initialize()
     m_txtFilter.Text = FolioLib.GetStr("search_text")
 
     m_lastWidth = Me.Width: m_lastHeight = Me.Height
+    m_loading = False
+    RepositionControls
     ' Deferred worker startup (after UI is visible)
     Application.OnTime Now, "FolioMain.DeferredStartup"
     eh.OK: Exit Sub
@@ -165,23 +166,24 @@ Private Sub BuildLayout()
 
     ' Left splitter
     Set m_splitterLeft = Me.Controls.Add("Forms.Label.1", "splitterLeft")
-    m_splitterLeft.BackColor = &HC0C0C0: m_splitterLeft.Caption = ""
+    m_splitterLeft.BackColor = &HD0D0D0: m_splitterLeft.Caption = ""
+    m_splitterLeft.SpecialEffect = fmSpecialEffectFlat
+    m_splitterLeft.BorderStyle = fmBorderStyleNone
     m_splitterLeft.MousePointer = 9
 
     ' Right splitter
     Set m_splitterRight = Me.Controls.Add("Forms.Label.1", "splitterRight")
-    m_splitterRight.BackColor = &HC0C0C0: m_splitterRight.Caption = ""
+    m_splitterRight.BackColor = &HD0D0D0: m_splitterRight.Caption = ""
+    m_splitterRight.SpecialEffect = fmSpecialEffectFlat
+    m_splitterRight.BorderStyle = fmBorderStyleNone
     m_splitterRight.MousePointer = 9
 
     ' Splitter guide (shared, shown during drag)
     Set m_splitterGuide = Me.Controls.Add("Forms.Label.1", "splitterGuide")
     m_splitterGuide.BackColor = &H808080: m_splitterGuide.Caption = ""
+    m_splitterGuide.SpecialEffect = fmSpecialEffectFlat
+    m_splitterGuide.BorderStyle = fmBorderStyleNone
     m_splitterGuide.Visible = False: m_splitterGuide.Enabled = False
-
-    ' Resize handle (bottom-right corner)
-    Set m_resizeHandle = Me.Controls.Add("Forms.Label.1", "resizeHandle")
-    m_resizeHandle.BackColor = &HC0C0C0: m_resizeHandle.Caption = ""
-    m_resizeHandle.MousePointer = 8
 
     Set m_mpgTabs = Me.Controls.Add("Forms.MultiPage.1", "mpgTabs")
     With m_mpgTabs
@@ -213,6 +215,14 @@ Private Sub BuildLayout()
     m_lblStatus.Caption = "  Ready"
 
     LoadChangeLog
+
+    ' Resize handle — created last so it's on top of other Labels
+    Set m_resizeHandle = Me.Controls.Add("Forms.Label.1", "resizeHandle")
+    m_resizeHandle.BackColor = &HD0D0D0: m_resizeHandle.Caption = ""
+    m_resizeHandle.SpecialEffect = fmSpecialEffectFlat
+    m_resizeHandle.BorderStyle = fmBorderStyleNone
+    m_resizeHandle.MousePointer = 8
+
     eh.OK: Exit Sub
 ErrHandler: eh.Catch
 End Sub
@@ -337,29 +347,32 @@ Private Sub RepositionControls()
     Dim ch As Single: ch = Me.InsideHeight
     Dim effLeftW As Single: effLeftW = IIf(m_leftVisible, m_leftW, 0)
     Dim effRightW As Single: effRightW = IIf(m_rightVisible, m_rightW, 0)
-    Dim splitterW As Single: splitterW = 4
+    Dim gap As Single: gap = 6
+    Dim splitterW As Single: splitterW = 2
+    Dim splitterArea As Single: splitterArea = gap * 2 + splitterW
     Dim handleSize As Single: handleSize = 14
     Dim centerW As Single: centerW = cw - effLeftW - effRightW - M * 2
-    If m_leftVisible Then centerW = centerW - splitterW
-    If m_rightVisible Then centerW = centerW - splitterW
+    If m_leftVisible Then centerW = centerW - splitterArea
+    If m_rightVisible Then centerW = centerW - splitterArea
     If centerW < 60 Then Exit Sub
-    Dim cx As Single: cx = effLeftW + IIf(m_leftVisible, splitterW, 0) + M
-    Dim rx As Single: rx = cx + centerW + M + IIf(m_rightVisible, splitterW, 0)
+    Dim cx As Single: cx = effLeftW + IIf(m_leftVisible, splitterArea, 0) + M
+    Dim rx As Single: rx = cx + centerW + M + IIf(m_rightVisible, splitterArea, 0)
 
-    ' Left column
+    ' Left column (no overlap with splitter)
+    Dim leftCtlW As Single: leftCtlW = m_leftW - M
     m_cmbSource.Visible = m_leftVisible
     m_txtFilter.Visible = m_leftVisible
     m_lstRecords.Visible = m_leftVisible
     If m_leftVisible Then
-        m_cmbSource.Left = M: m_cmbSource.Width = m_leftW
-        m_txtFilter.Left = M: m_txtFilter.Width = m_leftW
-        m_lstRecords.Left = M: m_lstRecords.Width = m_leftW: m_lstRecords.Height = ch - 74
+        m_cmbSource.Left = M: m_cmbSource.Width = leftCtlW
+        m_txtFilter.Left = M: m_txtFilter.Width = leftCtlW
+        m_lstRecords.Left = M: m_lstRecords.Width = leftCtlW: m_lstRecords.Height = ch - 74
     End If
 
-    ' Left splitter
+    ' Left splitter (centered in gap)
     m_splitterLeft.Visible = m_leftVisible
     If m_leftVisible Then
-        m_splitterLeft.Left = effLeftW: m_splitterLeft.Top = 0
+        m_splitterLeft.Left = effLeftW + gap: m_splitterLeft.Top = 0
         m_splitterLeft.Width = splitterW: m_splitterLeft.Height = ch
     End If
 
@@ -372,18 +385,19 @@ Private Sub RepositionControls()
     m_mpgTabs.Left = cx: m_mpgTabs.Top = M + 26
     m_mpgTabs.Width = centerW: m_mpgTabs.Height = ch - 56
 
-    ' Right splitter
+    ' Right splitter (centered in gap)
     m_splitterRight.Visible = m_rightVisible
     If m_rightVisible Then
-        m_splitterRight.Left = rx - splitterW: m_splitterRight.Top = 0
+        m_splitterRight.Left = rx - splitterArea + gap: m_splitterRight.Top = 0
         m_splitterRight.Width = splitterW: m_splitterRight.Height = ch
     End If
 
-    ' Right column (log)
+    ' Right column (log — bottom trimmed so resize handle isn't covered)
     m_lstLog.Visible = m_rightVisible
     m_cmdLogClear.Visible = m_rightVisible
     If m_rightVisible Then
-        m_lstLog.Left = rx: m_lstLog.Width = m_rightW: m_lstLog.Height = ch - 52
+        m_lstLog.Left = rx: m_lstLog.Width = m_rightW - M
+        m_lstLog.Height = ch - 40 - handleSize
         m_cmdLogClear.Left = rx
     End If
 
@@ -391,12 +405,12 @@ Private Sub RepositionControls()
     Dim sbTop As Single: sbTop = ch - 20
     m_lblCount.Visible = m_leftVisible
     If m_leftVisible Then
-        m_lblCount.Left = M: m_lblCount.Top = sbTop: m_lblCount.Width = effLeftW
+        m_lblCount.Left = M: m_lblCount.Top = sbTop: m_lblCount.Width = leftCtlW
     End If
     m_lblStatus.Left = cx: m_lblStatus.Top = sbTop
     m_lblStatus.Width = centerW
 
-    ' Resize handle
+    ' Resize handle (bottom-right, below log ListBox)
     m_resizeHandle.Left = cw - handleSize: m_resizeHandle.Top = ch - handleSize
     m_resizeHandle.Width = handleSize: m_resizeHandle.Height = handleSize
 
@@ -1589,6 +1603,7 @@ End Sub
 
 Private Sub UserForm_Layout()
     If m_loading Then Exit Sub
+    If m_splitterDragging Then Exit Sub
     On Error Resume Next
     If Me.Width <> m_lastWidth Or Me.Height <> m_lastHeight Then
         m_lastWidth = Me.Width: m_lastHeight = Me.Height

@@ -27,12 +27,15 @@ End Sub
 Private Sub m_ws_Change(ByVal target As Range)
     If m_callback Is Nothing Then Exit Sub
     On Error Resume Next
+    Application.ScreenUpdating = False
     Dim tbl As ListObject: Set tbl = m_ws.ListObjects(m_tableName)
-    If tbl Is Nothing Then Exit Sub
-    If tbl.DataBodyRange Is Nothing Then Exit Sub
+    If tbl Is Nothing Then GoTo Cleanup
+    If tbl.DataBodyRange Is Nothing Then GoTo Cleanup
     If Not Application.Intersect(target, tbl.DataBodyRange) Is Nothing Then
         m_callback.OnTableChanged
     End If
+Cleanup:
+    Application.ScreenUpdating = True
     On Error GoTo 0
 End Sub
 
